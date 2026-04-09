@@ -1,0 +1,23 @@
+{
+  "name": "@atelier/server",
+  "description": "Bun + Hono HTTP server for Atelier pipeline orchestration",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mathieufro/atelier",
+    "directory": "server"
+  },
+  "homepage": "https://github.com/mathieufro/atelier",
+  "bugs": {
+    "url": "https://github.com/mathieufro/atelier/issues"
+  },
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.2.89",
+    "@atelier/core": "workspace:*",
+    "@opencode-ai/sdk": "^1.2.10",
+    "@anthropic-ai/sdk": "^0.40.0",
+    "hono": "^4.0.0"
+  }
+}

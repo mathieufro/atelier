@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "strobe": {
+      "command": "strobe",
+      "args": ["mcp"]
+    }
+  }
+}

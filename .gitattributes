@@ -1,0 +1,7 @@
+* text=auto
+
+*.png binary
+*.vsix binary
+
+tests/visual/__goldens__/** binary
+tests/e2e/__goldens__/** binary

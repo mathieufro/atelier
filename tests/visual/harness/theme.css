@@ -1,0 +1,43 @@
+/* VS Code dark theme variables for visual testing */
+:root {
+  --vscode-editor-background: #1e1e1e;
+  --vscode-editor-foreground: #d4d4d4;
+  --vscode-sideBar-background: #252526;
+  --vscode-input-background: #3c3c3c;
+  --vscode-input-foreground: #cccccc;
+  --vscode-input-border: #3c3c3c;
+  --vscode-button-background: #0e639c;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #1177bb;
+  --vscode-focusBorder: #007fd4;
+  --vscode-foreground: #cccccc;
+  --vscode-descriptionForeground: #9e9e9e;
+  --vscode-errorForeground: #f48771;
+  --vscode-textLink-foreground: #3794ff;
+  --vscode-badge-background: #4d4d4d;
+  --vscode-badge-foreground: #d4d4d4;
+  --vscode-list-activeSelectionBackground: #094771;
+  --vscode-list-activeSelectionForeground: #ffffff;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-panel-border: #80808059;
+  --vscode-scrollbarSlider-background: rgba(121, 121, 121, 0.4);
+  --vscode-widget-shadow: rgba(0, 0, 0, 0.36);
+  --vscode-terminal-ansiRed: #cd3131;
+  --vscode-terminal-ansiGreen: #6a9955;
+  --vscode-terminal-ansiYellow: #e5c07b;
+  --vscode-terminal-ansiBlue: #2472c8;
+  --vscode-font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  --vscode-font-size: 13px;
+  --vscode-editor-font-family: "Menlo", "Monaco", monospace;
+  --vscode-editor-font-size: 12px;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background-color: var(--vscode-editor-background);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}

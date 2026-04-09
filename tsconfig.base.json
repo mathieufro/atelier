@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "paths": {
+      "@atelier/core": ["./packages/core/src"],
+      "@atelier/core/state-dir": ["./packages/core/src/state-dir"],
+      "@atelier/core/settings": ["./packages/core/src/settings"],
+      "@atelier/core/agent-engine": ["./packages/core/src/agent-engine"],
+      "@atelier/ui": ["./packages/ui/src"],
+      "@atelier/server": ["./server/src"]
+    }
+  }
+}

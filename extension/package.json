@@ -1,0 +1,102 @@
+{
+  "name": "atelier-extension",
+  "displayName": "Atelier",
+  "description": "Autonomous 15-stage coding pipeline for VS Code",
+  "bugs": {
+    "url": "https://github.com/mathieufro/atelier/issues"
+  },
+  "publisher": "atelier",
+  "version": "0.1.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mathieufro/atelier"
+  },
+  "icon": "resources/icon.png",
+  "homepage": "https://github.com/mathieufro/atelier",
+  "engines": { "vscode": "^1.94.0" },
+  "main": "dist/extension.js",
+  "activationEvents": ["onStartupFinished", "onWebviewPanel:atelierChat"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "atelier.openChat",
+        "title": "Atelier: Open Chat",
+        "icon": {
+          "light": "resources/icon-light.svg",
+          "dark": "resources/icon-dark.svg"
+        }
+      },
+      {
+        "command": "atelier.insertActiveFile",
+        "title": "Atelier: Insert Active File"
+      },
+      {
+        "command": "atelier.openChatInNewTab",
+        "title": "Atelier: Open Chat in New Tab",
+        "icon": {
+          "light": "resources/icon-light.svg",
+          "dark": "resources/icon-dark.svg"
+        }
+      },
+      {
+        "command": "atelier.openFile",
+        "title": "Atelier: Open File"
+      },
+      {
+        "command": "atelier.setLogLevel",
+        "title": "Atelier: Set Log Level"
+      },
+      {
+        "command": "atelier.setFavoriteModelVariant",
+        "title": "Atelier: Set model/variant as favorite"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "atelier.openChat",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a"
+      },
+      {
+        "command": "atelier.insertActiveFile",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "webviewId == 'atelierChat'"
+      }
+    ],
+    "configuration": {
+      "title": "Atelier",
+      "properties": {
+        "atelier.serverPort": {
+          "type": ["number", "null"],
+          "default": null,
+          "description": "Fixed port for the Atelier server. Leave empty for automatic port assignment."
+        },
+        "atelier.serverUrl": {
+          "type": ["string", "null"],
+          "default": null,
+          "scope": "resource",
+          "description": "Connect to an external Atelier server at this URL (e.g. http://localhost:9111) instead of spawning a local one. Set per-workspace in .vscode/settings.json."
+        },
+        "atelier.gitIntegration": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable automatic git branch creation and per-stage commits during pipelines."
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "atelier.openChatInNewTab",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "@atelier/core": "workspace:*",
+    "@opencode-ai/sdk": "^1.2.10"
+  }
+}

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Part Row Alignment — Visual Test</title>
+  <link rel="stylesheet" href="../../../extension/dist/webview/webview.css">
+  <style>
+    /* Simulate VS Code dark theme variables */
+    :root {
+      --vscode-editor-background: #1e1e1e;
+      --vscode-editor-foreground: #cccccc;
+      --vscode-sideBar-background: #252526;
+      --vscode-input-background: #3c3c3c;
+      --vscode-input-border: #3c3c3c;
+      --vscode-panel-border: #2b2b2b;
+      --vscode-button-background: #0e639c;
+      --vscode-button-foreground: #ffffff;
+      --vscode-button-hoverBackground: #1177bb;
+      --vscode-textLink-foreground: #3794ff;
+      --vscode-descriptionForeground: #8b8b8b;
+      --vscode-disabledForeground: #5a5a5a;
+      --vscode-errorForeground: #f48771;
+      --vscode-testing-iconPassed: #73c991;
+      --vscode-editorWarning-foreground: #cca700;
+      --vscode-focusBorder: #007fd4;
+      --vscode-list-hoverBackground: #2a2d2e;
+      --vscode-list-activeSelectionBackground: #094771;
+      --vscode-list-activeSelectionForeground: #ffffff;
+      --vscode-font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      --vscode-editor-font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+    }
+    body {
+      background: var(--vscode-editor-background);
+      color: var(--vscode-editor-foreground);
+      font-family: var(--vscode-font-family);
+      font-size: 13px;
+      padding: 20px;
+      max-width: 800px;
+    }
+  </style>
+</head>
+<body>
+  <h3 style="color: #8b8b8b; font-size: 11px; margin-bottom: 20px;">Part Row Alignment — Visual Test</h3>
+
+  <!-- Assistant message container -->
+  <div class="mb-3 space-y-1">
+
+    <!-- Text part (prose-sm) -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-description-fg"></span>
+      <div class="part-content">
+        <div class="prose prose-sm max-w-none">
+          <p>Here is my analysis of the bug. I'll fix the component and run the tests.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tool part: Edit -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-success"></span>
+      <div class="part-content">
+        <div>
+          <div class="flex items-baseline gap-2 leading-5">
+            <span class="text-vsc-disabled-fg text-sm font-medium shrink-0">Edit</span>
+            <button class="font-mono text-xs text-vsc-link hover:underline text-left truncate">/src/components/App.tsx</button>
+            <span class="ml-auto shrink-0 flex items-center gap-2">
+              <span class="text-vsc-disabled-fg text-xs">50ms</span>
+            </span>
+          </div>
+          <div class="mt-1">
+            <div class="space-y-1">
+              <div class="text-xs">
+                <span class="text-green-400">+2</span>
+                <span class="text-vsc-disabled-fg"> </span>
+                <span class="text-red-400">-1</span>
+              </div>
+              <div class="rounded-lg bg-vsc-editor-bg overflow-hidden max-h-[144px] overflow-y-auto">
+                <div class="font-mono text-xs leading-5">
+                  <div class="flex"><span class="select-none text-vsc-disabled-fg w-8 text-right pr-2 shrink-0">10</span><span class="select-none w-4 shrink-0 text-vsc-disabled-fg"> </span><span class="whitespace-pre text-vsc-description-fg"> export function App() {</span></div>
+                  <div class="flex bg-red-500/10"><span class="select-none text-vsc-disabled-fg w-8 text-right pr-2 shrink-0">11</span><span class="select-none w-4 shrink-0 text-red-400">-</span><span class="whitespace-pre text-red-400">  const [count, setCount] = useState(0)</span></div>
+                  <div class="flex bg-green-500/10"><span class="select-none text-vsc-disabled-fg w-8 text-right pr-2 shrink-0">11</span><span class="select-none w-4 shrink-0 text-green-400">+</span><span class="whitespace-pre text-green-400">  const [count, setCount] = useState(0)</span></div>
+                  <div class="flex bg-green-500/10"><span class="select-none text-vsc-disabled-fg w-8 text-right pr-2 shrink-0">12</span><span class="select-none w-4 shrink-0 text-green-400">+</span><span class="whitespace-pre text-green-400">  const [name, setName] = useState("")</span></div>
+                  <div class="flex"><span class="select-none text-vsc-disabled-fg w-8 text-right pr-2 shrink-0">13</span><span class="select-none w-4 shrink-0 text-vsc-disabled-fg"> </span><span class="whitespace-pre text-vsc-description-fg">  return (</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tool part: Bash -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-success"></span>
+      <div class="part-content">
+        <div>
+          <div class="flex items-baseline gap-2 leading-5">
+            <span class="text-vsc-disabled-fg text-sm font-medium shrink-0">Bash</span>
+            <span class="font-mono text-xs text-vsc-editor-fg truncate">bun vitest run</span>
+            <span class="ml-auto shrink-0 flex items-center gap-2">
+              <span class="text-vsc-disabled-fg text-xs">1.5s</span>
+            </span>
+          </div>
+          <div class="mt-1">
+            <div class="space-y-1">
+              <div class="font-mono text-xs text-vsc-editor-fg"><span class="text-vsc-disabled-fg">$ </span>bun vitest run</div>
+              <pre class="text-xs text-vsc-description-fg bg-vsc-editor-bg rounded p-2 overflow-x-auto max-h-48 overflow-y-auto">All 42 tests passed</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tool part: Write -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-success"></span>
+      <div class="part-content">
+        <div>
+          <div class="flex items-baseline gap-2 leading-5">
+            <span class="text-vsc-disabled-fg text-sm font-medium shrink-0">Write</span>
+            <button class="font-mono text-xs text-vsc-link hover:underline text-left truncate">/src/App.test.tsx</button>
+            <span class="ml-auto shrink-0 flex items-center gap-2">
+              <span class="text-vsc-disabled-fg text-xs">200ms</span>
+            </span>
+          </div>
+          <div class="mt-1">
+            <div class="space-y-1">
+              <div class="text-xs text-vsc-description-fg">14 lines</div>
+              <div class="relative">
+                <pre class="text-xs text-vsc-description-fg bg-vsc-editor-bg rounded-lg p-3 overflow-x-auto font-mono whitespace-pre max-h-[144px] overflow-hidden">import { describe, it, expect } from "vitest"
+import { render } from "@solidjs/testing-library"
+import { App } from "./App.jsx"
+
+describe("App", () => {
+  it("renders without crashing", () => {</pre>
+                <div class="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-vsc-editor-bg to-transparent rounded-b-lg"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tool part: Read -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-success"></span>
+      <div class="part-content">
+        <div>
+          <div class="flex items-baseline gap-2 leading-5">
+            <span class="text-vsc-disabled-fg text-sm font-medium shrink-0">Read</span>
+            <button class="font-mono text-xs text-vsc-link hover:underline text-left truncate">/src/config.ts</button>
+            <span class="ml-auto shrink-0 flex items-center gap-2">
+              <span class="text-vsc-disabled-fg text-xs">30ms</span>
+            </span>
+          </div>
+          <div class="mt-1">
+            <div class="space-y-1">
+              <div class="relative">
+                <pre class="text-xs text-vsc-description-fg bg-vsc-editor-bg rounded-lg p-2 overflow-x-auto max-h-[144px] overflow-hidden">export const config = {
+  port: 3000,
+  host: "localhost",
+  debug: true,
+  maxRetries: 3,
+  timeout: 5000,</pre>
+                <div class="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-vsc-editor-bg to-transparent rounded-b-lg"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Text part again -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-description-fg"></span>
+      <div class="part-content">
+        <div class="prose prose-sm max-w-none">
+          <p>All tests pass. The bug was in the state initialization.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Retry part -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-warning"></span>
+      <div class="part-content">
+        <div class="text-sm leading-5 text-vsc-warning flex items-center gap-1">
+          <span>&#x27F3;</span> Retrying: rate limit exceeded
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent part -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-description-fg"></span>
+      <div class="part-content">
+        <div class="text-sm leading-5 text-vsc-description-fg">
+          Agent: <span class="font-mono">coder</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compaction part -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-description-fg"></span>
+      <div class="part-content">
+        <div class="text-sm leading-5 text-vsc-disabled-fg italic">
+          Context compacted
+        </div>
+      </div>
+    </div>
+
+    <!-- Tool part: error state -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-error"></span>
+      <div class="part-content">
+        <div>
+          <div class="flex items-baseline gap-2 leading-5">
+            <span class="text-vsc-disabled-fg text-sm font-medium shrink-0">Bash</span>
+            <span class="font-mono text-xs text-vsc-editor-fg truncate">rm -rf /nope</span>
+            <span class="ml-auto shrink-0 flex items-center gap-2">
+              <span class="text-vsc-disabled-fg text-xs">100ms</span>
+              <span class="text-vsc-error text-xs">failed</span>
+            </span>
+          </div>
+          <div class="mt-1">
+            <pre class="text-xs text-vsc-error bg-vsc-error/10 rounded p-2">Permission denied</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Running tool (blue dot) -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-link"></span>
+      <div class="part-content">
+        <div>
+          <div class="flex items-baseline gap-2 leading-5">
+            <span class="text-vsc-disabled-fg text-sm font-medium shrink-0">Bash</span>
+            <span class="font-mono text-xs text-vsc-editor-fg truncate">npm test</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reasoning part (header outside card) -->
+    <div class="part-row">
+      <span class="part-dot bg-vsc-description-fg"></span>
+      <div class="part-content">
+        <div>
+          <button class="flex items-center gap-2 w-full text-sm leading-5 text-vsc-description-fg italic">
+            <span>Thinking</span>
+            <span class="text-vsc-disabled-fg text-xs">(1.2s)</span>
+            <span class="ml-auto text-vsc-disabled-fg shrink-0 text-xs">&#x25B8;</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

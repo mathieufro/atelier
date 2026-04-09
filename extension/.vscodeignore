@@ -1,0 +1,5 @@
+**/*
+!dist/**
+!resources/**
+!package.json
+!LICENSE
