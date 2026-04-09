@@ -24,14 +24,14 @@ Use `./install.sh --no-strobe` to skip optional Strobe installation (debugging i
 
 You need at least one LLM backend:
 
-**Claude Code (recommended):**
+**Claude Code:**
 ```bash
 npm install -g @anthropic-ai/claude-code
 claude login
 ```
 Requires a [Max subscription](https://claude.ai/settings/billing).
 
-**OpenCode (OpenAI-compatible models):**
+**OpenCode:**
 ```bash
 # See https://github.com/opencode-ai/opencode
 opencode login
@@ -41,7 +41,7 @@ Both backends can run simultaneously — models appear in a unified picker.
 
 ### Opening Atelier
 
-Press `Cmd+Shift+A` in VS Code. The Atelier panel opens with a skill picker and input bar.
+Press `Cmd+Shift+A` (macOS) or `Ctrl+Shift+A` (Linux) in VS Code. The Atelier panel opens with a skill picker and input bar.
 
 ## Using the Pipeline
 

@@ -46,13 +46,23 @@ Atelier is not locked to one LLM provider. It supports multiple backends simulta
 
 Models from all connected backends appear in a unified picker. The architecture is extensible — new backends implement the `AgentEngine` interface.
 
+**Per-stage model selection** — Each pipeline stage can use a different model. Pick a fast model for brainstorming, a strong model for implementation, a cheap model for reviews. The stage model picker lets you assign models individually or set a default for the entire pipeline.
+
 ## Safety
 
-**Atelier runs autonomous LLM agents with full system permissions** (file writes, shell commands, git operations). Agents execute with the same permissions as your user. Run Atelier in a sandboxed environment or dedicated workspace. See [`SECURITY.md`](SECURITY.md) for details.
+> **Atelier auto-approves every agent action.** File writes, shell commands, git operations, tool calls — all run without confirmation prompts. This is by design: autonomous pipelines can't stop and wait for human approval at every step.
+
+Agents execute with the same permissions as your user. There is no sandbox built in. You should:
+
+- Run Atelier in a **container**, **VM**, or **disposable environment**
+- Never run on machines with production credentials or sensitive data
+- Review pipeline artifacts before merging to your main branch
+
+See [`SECURITY.md`](SECURITY.md) for details.
 
 ## Platform Support
 
-Atelier is developed and tested on **macOS**. Linux is expected to work but is not heavily tested. Windows is not currently supported.
+Atelier is developed on **macOS** and tested on **macOS + Linux** (CI runs on Ubuntu). Windows is not currently supported.
 
 ## Quick Start
 
@@ -63,24 +73,25 @@ Atelier is developed and tested on **macOS**. Linux is expected to work but is n
    ./install.sh
    ```
 
-2. **Set up a backend — Claude Code (recommended):**
+2. **Set up a backend** (at least one):
+
+   **Claude Code:**
    ```bash
    npm install -g @anthropic-ai/claude-code
    claude login
    ```
    Requires a [Max subscription](https://claude.ai/settings/billing).
 
+   **OpenCode:**
+   ```bash
+   # Install OpenCode (see https://github.com/opencode-ai/opencode)
+   opencode login
+   ```
+
+   Both backends can run simultaneously — models appear in a unified picker.
+
 3. **Open Atelier:**
-   Press `Cmd+Shift+A` in VS Code. Pick a skill, describe your task.
-
-### Alternative Backend: OpenCode
-
-```bash
-# Install OpenCode (see https://github.com/opencode-ai/opencode)
-opencode login
-```
-
-Same workflow — models from OpenCode appear in the model picker alongside Claude models.
+   Press `Cmd+Shift+A` (macOS) or `Ctrl+Shift+A` (Linux) in VS Code. Pick a skill, describe your task.
 
 ## Architecture
 
