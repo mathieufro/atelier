@@ -3,6 +3,7 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { join } from "node:path"
 import { homedir } from "node:os"
+import { terminateProcessTree } from "@atelier/core/process-platform"
 import type { Workspace } from "./workspace.js"
 import { backends } from "./config.js"
 
@@ -85,6 +86,8 @@ export async function createE2EHarness(workspace: Workspace, opts?: { port?: num
   const serverProcess = spawn("bun", ["run", "server/src/index.ts", workspace.path], {
     cwd: projectRoot,
     stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32",
+    windowsHide: true,
     env: {
       ...process.env,
       ATELIER_PORT: String(port),
@@ -393,17 +396,9 @@ export async function createE2EHarness(workspace: Workspace, opts?: { port?: num
 
     async cleanup() {
       sseAbort.abort()
-      serverProcess.kill("SIGTERM")
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          serverProcess.kill("SIGKILL")
-          resolve()
-        }, 5_000)
-        serverProcess.on("close", () => {
-          clearTimeout(timeout)
-          resolve()
-        })
-      })
+      if (serverProcess.pid) {
+        await terminateProcessTree(serverProcess.pid)
+      }
     },
   }
 

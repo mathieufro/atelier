@@ -20,7 +20,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import * as path from "node:path"
 import * as fs from "node:fs"
 import * as os from "node:os"
-import { terminateProcessTree } from "./infra/process-tree.js"
+import { terminateProcessTree } from "@atelier/core/process-platform"
 import type { IdleDetectorStagePolicyOverride } from "./orchestration/idle-detector-config.js"
 
 const workspacePath = process.argv[2] || process.cwd()
@@ -74,7 +74,8 @@ async function startOpenCode(knownAtelierPort: number, stateDir: string): Promis
   return new Promise((resolve, reject) => {
     const proc = spawn("opencode", ["serve", "--hostname=127.0.0.1", "--port=0"], {
       cwd: workspacePath,
-      detached: true,
+      detached: process.platform !== "win32",
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
@@ -294,6 +295,8 @@ async function main() {
 
   const ralphController = new RalphLoopController(eventMerger)
 
+  let shutdownRef: (() => Promise<void>) | undefined
+
   const app = createApp({
     registry,
     metadataStore,
@@ -322,6 +325,7 @@ async function main() {
       serverLogger.info("atelier", "message", "message_rejected", { data: { reason } })
     },
     onActivity: touchActivity,
+    onShutdown: async () => { await shutdownRef?.() },
     logger,
   })
 
@@ -493,6 +497,8 @@ async function main() {
     openCodeEngine?.disconnect()
     process.exit(0)
   }
+
+  shutdownRef = shutdown
 
   process.on("SIGTERM", shutdown)
   process.on("SIGINT", shutdown)

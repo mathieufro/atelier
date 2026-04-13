@@ -1026,3 +1026,23 @@ describe("POST /session/:id/fork", () => {
     expect(engine.forkSession).toHaveBeenCalledWith("s-nobody", { title: undefined })
   })
 })
+
+describe("POST /shutdown", () => {
+  it("returns 200 and calls onShutdown callback", async () => {
+    const onShutdown = vi.fn(async () => {})
+    const opts = createTestAppOptions({ onShutdown })
+    const app = createApp(opts)
+
+    const res = await app.request("/shutdown", { method: "POST" })
+    expect(res.status).toBe(200)
+    expect(onShutdown).toHaveBeenCalledOnce()
+  })
+
+  it("returns 501 when onShutdown is not configured", async () => {
+    const opts = createTestAppOptions()
+    const app = createApp(opts)
+
+    const res = await app.request("/shutdown", { method: "POST" })
+    expect(res.status).toBe(501)
+  })
+})

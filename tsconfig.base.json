@@ -20,6 +20,7 @@
       "@atelier/core/state-dir": ["./packages/core/src/state-dir"],
       "@atelier/core/settings": ["./packages/core/src/settings"],
       "@atelier/core/agent-engine": ["./packages/core/src/agent-engine"],
+      "@atelier/core/process-platform": ["./packages/core/src/process-platform"],
       "@atelier/ui": ["./packages/ui/src"],
       "@atelier/server": ["./server/src"]
     }

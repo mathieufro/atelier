@@ -24,11 +24,13 @@ export default defineConfig({
       ["server/tests/**/*.test.ts", "node"],
       ["tests/integration/**/*.test.ts", "node"],
       ["tests/e2e/**/*.test.ts", "node"],
+      ["packages/*/tests/**/*.test.ts", "node"],
     ],
     poolMatchGlobs: [
       ["server/tests/**/*.test.ts", "forks"],
       ["tests/integration/**/*.test.ts", "forks"],
       ["tests/e2e/**/*.test.ts", "forks"],
+      ["packages/*/tests/**/*.test.ts", "forks"],
     ],
     server: {
       deps: {

@@ -1,27 +1,76 @@
-import { describe, expect, it } from "vitest"
-import { parseOrphanOpencodePids } from "../src/atelier-server-manager"
+import { describe, it, expect, vi } from "vitest"
+import { parseOrphanOpencodePids, parseOrphanClaudeSdkPids } from "../src/atelier-server-manager"
+import { isAlive, type ProcessInfo } from "@atelier/core/process-platform"
 
 describe("parseOrphanOpencodePids", () => {
-  it("returns only strict orphan opencode serve matches", () => {
-    const ps = [
-      " 15787     1 opencode serve --hostname=127.0.0.1 --port=0",
-      " 15796     1 opencode serve --hostname=127.0.0.1 --port=0",
-      " 20800 15796 opencode serve --hostname=127.0.0.1 --port=0",
-      " 12345     1 opencode serve --hostname=0.0.0.0 --port=4096",
-      " 99999     1 node /tmp/foo.js",
-      "",
-    ].join("\n")
+  it("returns PIDs of orphaned opencode serve processes (Unix: ppid=1)", () => {
+    const procs: ProcessInfo[] = [
+      { pid: 15787, ppid: 1, command: "opencode serve --hostname=127.0.0.1 --port=0" },
+      { pid: 15796, ppid: 1, command: "opencode serve --hostname=127.0.0.1 --port=0" },
+      { pid: 20800, ppid: 15796, command: "opencode serve --hostname=127.0.0.1 --port=0" },
+      { pid: 12345, ppid: 1, command: "opencode serve --hostname=0.0.0.0 --port=4096" },
+      { pid: 99999, ppid: 1, command: "node /tmp/foo.js" },
+    ]
 
-    expect(parseOrphanOpencodePids(ps)).toEqual([15787, 15796])
+    expect(parseOrphanOpencodePids(procs)).toEqual([15787, 15796])
   })
 
-  it("handles malformed rows safely", () => {
-    const ps = [
-      "not a process row",
-      "abc def ghi",
-      " 11111     1 opencode serve --hostname=127.0.0.1 --port=0",
-    ].join("\n")
+  it("returns empty array for no matching processes", () => {
+    const procs: ProcessInfo[] = [
+      { pid: 99999, ppid: 1, command: "node /tmp/foo.js" },
+    ]
+    expect(parseOrphanOpencodePids(procs)).toEqual([])
+  })
 
-    expect(parseOrphanOpencodePids(ps)).toEqual([11111])
+  it("returns empty array for empty input", () => {
+    expect(parseOrphanOpencodePids([])).toEqual([])
+  })
+})
+
+describe("parseOrphanClaudeSdkPids", () => {
+  it("returns PIDs of orphaned claude-agent-sdk processes (Unix: ppid=1)", () => {
+    const procs: ProcessInfo[] = [
+      { pid: 100, ppid: 1, command: "node /path/to/@anthropic-ai/claude-agent-sdk/cli.js" },
+      { pid: 200, ppid: 1, command: "node /path/to/claude-agent-sdk/cli.js" },
+      { pid: 300, ppid: 500, command: "node /path/to/@anthropic-ai/claude-agent-sdk/cli.js" },
+      { pid: 400, ppid: 1, command: "node /tmp/other.js" },
+    ]
+
+    expect(parseOrphanClaudeSdkPids(procs)).toEqual([100, 200])
+  })
+
+  it("returns empty array for no matching processes", () => {
+    expect(parseOrphanClaudeSdkPids([])).toEqual([])
+  })
+})
+
+describe("orphan detection — Windows path", () => {
+  // On Windows, orphans are detected by checking if the parent PID is dead (!isAlive(ppid)),
+  // not by checking ppid === 1. These tests stub the platform to exercise that branch.
+
+  it("parseOrphanOpencodePids detects orphans with dead parent on Windows", () => {
+    vi.stubGlobal("process", { ...process, platform: "win32" })
+
+    const procs: ProcessInfo[] = [
+      // ppid 99999 is (almost certainly) dead — orphan
+      { pid: 100, ppid: 999_999, command: "opencode serve --hostname=127.0.0.1 --port=0" },
+      // ppid is the current process — alive, not an orphan
+      { pid: 200, ppid: process.pid, command: "opencode serve --hostname=127.0.0.1 --port=0" },
+    ]
+
+    expect(parseOrphanOpencodePids(procs)).toEqual([100])
+    vi.unstubAllGlobals()
+  })
+
+  it("parseOrphanClaudeSdkPids detects orphans with dead parent on Windows", () => {
+    vi.stubGlobal("process", { ...process, platform: "win32" })
+
+    const procs: ProcessInfo[] = [
+      { pid: 300, ppid: 999_999, command: "node C:\\path\\to\\@anthropic-ai\\claude-agent-sdk\\cli.js" },
+      { pid: 400, ppid: process.pid, command: "node C:\\path\\to\\@anthropic-ai\\claude-agent-sdk\\cli.js" },
+    ]
+
+    expect(parseOrphanClaudeSdkPids(procs)).toEqual([300])
+    vi.unstubAllGlobals()
   })
 })
