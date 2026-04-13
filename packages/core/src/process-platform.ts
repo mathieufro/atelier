@@ -41,8 +41,25 @@ function listProcessesUnix(): ProcessInfo[] {
     windowsHide: true,
   })
   if (result.status !== 0 || !result.stdout) return []
+  return parseUnixPsOutput(result.stdout)
+}
 
-  const lines = result.stdout.split("\n")
+function listProcessesWindows(): ProcessInfo[] {
+  const result = spawnSync("powershell.exe", [
+    "-NoProfile",
+    "-Command",
+    "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation",
+  ], {
+    encoding: "utf8",
+    windowsHide: true,
+  })
+  if (result.status !== 0 || !result.stdout) return []
+  return parseWindowsCsvOutput(result.stdout)
+}
+
+/** @internal Exported for testing — parse Unix `ps -axo pid,ppid,command` output. */
+export function parseUnixPsOutput(stdout: string): ProcessInfo[] {
+  const lines = stdout.split("\n")
   const procs: ProcessInfo[] = []
   // Skip header line
   for (let i = 1; i < lines.length; i++) {
@@ -60,18 +77,9 @@ function listProcessesUnix(): ProcessInfo[] {
   return procs
 }
 
-function listProcessesWindows(): ProcessInfo[] {
-  const result = spawnSync("powershell.exe", [
-    "-NoProfile",
-    "-Command",
-    "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation",
-  ], {
-    encoding: "utf8",
-    windowsHide: true,
-  })
-  if (result.status !== 0 || !result.stdout) return []
-
-  const lines = result.stdout.split("\n")
+/** @internal Exported for testing — parse Windows CSV output from Get-CimInstance. */
+export function parseWindowsCsvOutput(stdout: string): ProcessInfo[] {
+  const lines = stdout.split("\n")
   const procs: ProcessInfo[] = []
   // Skip CSV header line
   for (let i = 1; i < lines.length; i++) {
@@ -105,6 +113,9 @@ export async function terminateProcessTree(
         windowsHide: true,
       })
     } catch {}
+    // Confirm the process actually died — taskkill can fail silently for
+    // protected processes or delayed cleanup.
+    await waitForExit(pid, 1000)
     return
   }
 
