@@ -20,7 +20,8 @@
     ".": "./src/index.ts",
     "./state-dir": "./src/state-dir.ts",
     "./agent-engine": "./src/agent-engine.ts",
-    "./settings": "./src/settings.ts"
+    "./settings": "./src/settings.ts",
+    "./process-platform": "./src/process-platform.ts"
   },
   "dependencies": {
     "@opencode-ai/sdk": "^1.2.10"

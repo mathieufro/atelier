@@ -62,7 +62,7 @@ See [`SECURITY.md`](SECURITY.md) for details.
 
 ## Platform Support
 
-Atelier is developed on **macOS** and tested on **macOS + Linux** (CI runs on Ubuntu). Windows is not currently supported.
+Atelier runs on **macOS**, **Linux**, and **Windows 10/11**. CI runs on Ubuntu and Windows.
 
 ## Quick Start
 

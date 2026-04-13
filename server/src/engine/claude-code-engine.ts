@@ -1,7 +1,7 @@
 import crypto from "node:crypto"
-import { execSync } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { listProcesses, terminateProcessTree } from "@atelier/core/process-platform"
 import type { AgentEngine, SessionConfig, MessageInput, AgentSession, SessionOutput } from "@atelier/core/agent-engine"
 import type { Logger, AtelierEvent } from "@atelier/core"
 import type { DetectorNormalizedEvent, DetectorProgressSubtype } from "../orchestration/idle-detector-events.js"
@@ -682,22 +682,13 @@ export class ClaudeCodeEngine implements AgentEngine {
    * kill the subprocess (which happens with the current SDK version).
    */
   private killSdkSubprocess(sessionId: string): void {
-    try {
-      const out = execSync("ps -eo pid,command", { encoding: "utf8", timeout: 5000 })
-      for (const line of out.split("\n")) {
-        if (line.includes("claude-agent-sdk") && line.includes(`"ATELIER_SESSION_ID":"${sessionId}"`)) {
-          const pidMatch = line.trim().match(/^(\d+)\s/)
-          if (pidMatch) {
-            const pid = parseInt(pidMatch[1]!, 10)
-            this.log?.debug("atelier", "session", "killing_sdk_subprocess", { sessionId, data: { pid } })
-            try { process.kill(pid, "SIGTERM") } catch {}
-            // Also kill the process group (child MCP servers)
-            try { process.kill(-pid, "SIGTERM") } catch {}
-          }
-        }
-      }
-    } catch {
-      // ps failed — not critical
+    const procs = listProcesses((proc) =>
+      proc.command.includes("claude-agent-sdk")
+      && proc.command.includes(`"ATELIER_SESSION_ID":"${sessionId}"`)
+    )
+    for (const proc of procs) {
+      this.log?.debug("atelier", "session", "killing_sdk_subprocess", { sessionId, data: { pid: proc.pid } })
+      terminateProcessTree(proc.pid).catch(() => {})
     }
   }
 

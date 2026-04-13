@@ -10,15 +10,23 @@ It's not a chatbot. It's a multi-stage pipeline where specialized agents collabo
 
 ### Installation
 
+**macOS / Linux:**
 ```bash
 git clone https://github.com/mathieufro/atelier.git
 cd atelier
 ./install.sh
 ```
 
+**Windows (PowerShell):**
+```powershell
+git clone https://github.com/mathieufro/atelier.git
+cd atelier
+.\install.ps1
+```
+
 This installs dependencies, builds all packages, and installs the VS Code extension.
 
-Use `./install.sh --no-strobe` to skip optional Strobe installation (debugging infrastructure).
+On macOS/Linux, use `./install.sh --no-strobe` to skip optional Strobe installation (debugging infrastructure). Strobe is not available on Windows.
 
 ### Backend Setup
 
@@ -41,7 +49,7 @@ Both backends can run simultaneously — models appear in a unified picker.
 
 ### Opening Atelier
 
-Press `Cmd+Shift+A` (macOS) or `Ctrl+Shift+A` (Linux) in VS Code. The Atelier panel opens with a skill picker and input bar.
+Press `Cmd+Shift+A` (macOS) or `Ctrl+Shift+A` (Windows/Linux) in VS Code. The Atelier panel opens with a skill picker and input bar.
 
 ## Using the Pipeline
 

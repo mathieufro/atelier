@@ -16,7 +16,7 @@
   "scripts": {
     "build": "bun run typecheck && bun run build:core && bun run build:ui && bun run build:css && bun run build:ext && bun run build:vsix && bun run install:ext && bun run kill:servers",
     "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p server && tsc --noEmit -p extension && tsc --noEmit -p packages/ui",
-    "kill:servers": "for f in ~/.atelier/*/atelier.pid; do [ -f \"$f\" ] && kill $(head -1 \"$f\") 2>/dev/null; rm -f \"$f\"; done; echo 'Atelier servers stopped — reload VS Code window to restart'",
+    "kill:servers": "bun run scripts/kill-servers.ts",
     "build:core": "bun build packages/core/src/index.ts --outdir packages/core/dist --target node",
     "build:ui": "bunx vite build --config packages/ui/vite.config.ts",
     "build:css": "bunx @tailwindcss/cli -i packages/ui/src/index.css -o extension/dist/webview/webview.css --minify",

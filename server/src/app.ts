@@ -68,6 +68,8 @@ export interface AppOptions {
   onMessageRejected?: (reason: string) => void
   /** Called on every HTTP request — used by idle timeout to track activity. */
   onActivity?: () => void
+  /** Graceful shutdown callback. Called by POST /shutdown (Windows graceful shutdown path). */
+  onShutdown?: () => Promise<void>
   /** Ralph loop controller — manages iterative agent loops as standalone sessions. */
   ralphController?: RalphLoopController
   logger?: Logger
@@ -229,6 +231,18 @@ export function createApp(options: AppOptions): Hono {
       backends[id] = "ready"
     }
     return c.json({ status, backends })
+  })
+
+  // --- Shutdown ---
+  app.post("/shutdown", async (c) => {
+    if (!options.onShutdown) {
+      return c.json({ error: "Shutdown not configured" }, 501)
+    }
+    // Fire-and-forget — the server may exit before the response is fully sent.
+    // We return 200 immediately, then trigger shutdown asynchronously.
+    const shutdownPromise = options.onShutdown()
+    shutdownPromise.catch(() => {})
+    return c.json({ ok: true })
   })
 
   // --- Proxy endpoints ---

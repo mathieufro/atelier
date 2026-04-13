@@ -1,4 +1,5 @@
-import { spawn, spawnSync, type ChildProcess } from "node:child_process"
+import { spawn, type ChildProcess } from "node:child_process"
+import { listProcesses, isAlive, terminateProcessTree, waitForExit, type ProcessInfo } from "@atelier/core/process-platform"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import * as os from "node:os"
@@ -25,9 +26,12 @@ function augmentPath(env: NodeJS.ProcessEnv): void {
     path.join(os.homedir(), ".opencode", "bin"),
     path.join(os.homedir(), ".bun", "bin"),
     path.join(os.homedir(), ".local", "bin"),
-    "/usr/local/bin",
-    "/opt/homebrew/bin",
   ]
+  if (process.platform === "win32") {
+    extra.push(path.join(process.env.LOCALAPPDATA ?? "", "bun"))
+  } else {
+    extra.push("/usr/local/bin", "/opt/homebrew/bin")
+  }
   const current = env.PATH ?? ""
   const parts = current.split(path.delimiter).filter(Boolean)
   for (const dir of extra) {
@@ -36,36 +40,22 @@ function augmentPath(env: NodeJS.ProcessEnv): void {
   env.PATH = parts.join(path.delimiter)
 }
 
-export function parseOrphanOpencodePids(psOutput: string): number[] {
-  return psOutput
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.match(/^(\d+)\s+(\d+)\s+(.+)$/))
-    .filter((match): match is RegExpMatchArray => match !== null)
-    .map((match) => ({ pid: parseInt(match[1]!, 10), ppid: parseInt(match[2]!, 10), cmd: match[3]! }))
-    .filter((row) =>
-      Number.isFinite(row.pid)
-      && Number.isFinite(row.ppid)
-      && row.ppid === 1
-      && row.cmd === "opencode serve --hostname=127.0.0.1 --port=0")
-    .map((row) => row.pid)
+export function parseOrphanOpencodePids(procs: ProcessInfo[]): number[] {
+  return procs
+    .filter((proc) =>
+      proc.command === "opencode serve --hostname=127.0.0.1 --port=0"
+      && (process.platform === "win32" ? !isAlive(proc.ppid) : proc.ppid === 1)
+    )
+    .map((proc) => proc.pid)
 }
 
-export function parseOrphanClaudeSdkPids(psOutput: string): number[] {
-  return psOutput
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.match(/^(\d+)\s+(\d+)\s+(.+)$/))
-    .filter((match): match is RegExpMatchArray => match !== null)
-    .map((match) => ({ pid: parseInt(match[1]!, 10), ppid: parseInt(match[2]!, 10), cmd: match[3]! }))
-    .filter((row) =>
-      Number.isFinite(row.pid)
-      && Number.isFinite(row.ppid)
-      && row.ppid === 1
-      && (row.cmd.includes("@anthropic-ai/claude-agent-sdk") || row.cmd.includes("claude-agent-sdk/cli.js")))
-    .map((row) => row.pid)
+export function parseOrphanClaudeSdkPids(procs: ProcessInfo[]): number[] {
+  return procs
+    .filter((proc) =>
+      (proc.command.includes("@anthropic-ai/claude-agent-sdk") || proc.command.includes("claude-agent-sdk/cli.js"))
+      && (process.platform === "win32" ? !isAlive(proc.ppid) : proc.ppid === 1)
+    )
+    .map((proc) => proc.pid)
 }
 
 export type ServerState = "idle" | "starting" | "running" | "failed" | "crashed" | "stopped"
@@ -135,7 +125,8 @@ export class AtelierServerManager {
       cwd: options.cwd,
       stdio: ["ignore", "pipe", "pipe"],
       env,
-      detached: true,
+      detached: process.platform !== "win32",
+      windowsHide: true,
     })
     this.proc = proc
     this.log?.("debug", "server_spawned", `pid=${proc.pid}`)
@@ -181,9 +172,7 @@ export class AtelierServerManager {
     const atelierUrl = contents[1]
     if (isNaN(pid) || !atelierUrl) return false
 
-    try {
-      process.kill(pid, 0)
-    } catch {
+    if (!isAlive(pid)) {
       this.log?.("debug", "reconnect_pid_dead", `pid=${pid}`)
       return false
     }
@@ -245,9 +234,24 @@ export class AtelierServerManager {
     this.stopping = true
     if (this.pidWatcher) { clearInterval(this.pidWatcher); this.pidWatcher = null }
     if (this.proc) {
-      // Kill the entire process group (bun + opencode child) to prevent orphans
       if (this.proc.pid) {
-        await this.terminateProcessTree(this.proc.pid)
+        // On Windows, attempt graceful shutdown via HTTP before killing the process tree
+        if (process.platform === "win32" && this._atelierUrl) {
+          try {
+            await fetch(`${this._atelierUrl}/shutdown`, { method: "POST" })
+            if (await waitForExit(this.proc.pid, 2000)) {
+              this.proc = null
+              this._atelierUrl = null
+              if (this._state !== "idle") {
+                this.setState("stopped")
+              }
+              return
+            }
+          } catch {
+            // Server already dead or unreachable — fall through to terminateProcessTree
+          }
+        }
+        await terminateProcessTree(this.proc.pid)
       }
       this.proc = null
     }
@@ -280,10 +284,10 @@ export class AtelierServerManager {
     if (!fs.existsSync(pidPath)) return
     try {
       const pid = parseInt(fs.readFileSync(pidPath, "utf-8").split("\n")[0]!, 10)
-      if (!isNaN(pid) && this.isAlive(pid)) {
+      if (!isNaN(pid) && isAlive(pid)) {
         this.log?.("debug", "pid_file_read", `path=${pidPath}`)
         // Kill the process group to also clean up opencode child
-        await this.terminateProcessTree(pid)
+        await terminateProcessTree(pid)
       }
     } catch { /* PID file unreadable */ }
     try { fs.unlinkSync(pidPath) } catch { /* already removed */ }
@@ -291,67 +295,31 @@ export class AtelierServerManager {
 
   /** Kill orphaned opencode serve processes that match Atelier's ephemeral signature. */
   private async killOrphanOpencodeProcesses(): Promise<void> {
-    const out = spawnSync("ps", ["-axo", "pid,ppid,command"], { encoding: "utf8" })
-    if (out.status !== 0 || !out.stdout) return
-
-    const pids = parseOrphanOpencodePids(out.stdout)
+    const procs = listProcesses()
+    const pids = parseOrphanOpencodePids(procs)
     this.log?.("debug", "orphan_scan", `found=${pids.length}`)
 
     for (const pid of pids) {
-      await this.terminateProcessTree(pid)
+      await terminateProcessTree(pid)
     }
   }
 
   /** Kill orphaned claude-agent-sdk CLI processes (ppid=1, parent server died). */
   private async killOrphanClaudeSdkProcesses(): Promise<void> {
-    const out = spawnSync("ps", ["-axo", "pid,ppid,command"], { encoding: "utf8" })
-    if (out.status !== 0 || !out.stdout) return
-
-    const pids = parseOrphanClaudeSdkPids(out.stdout)
+    const procs = listProcesses()
+    const pids = parseOrphanClaudeSdkPids(procs)
     this.log?.("debug", "orphan_sdk_scan", `found=${pids.length}`)
 
     for (const pid of pids) {
-      await this.terminateProcessTree(pid)
+      await terminateProcessTree(pid)
     }
-  }
-
-  private isAlive(pid: number): boolean {
-    try {
-      process.kill(pid, 0)
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  private async waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
-    const end = Date.now() + timeoutMs
-    while (Date.now() < end) {
-      if (!this.isAlive(pid)) return true
-      await new Promise(r => setTimeout(r, 100))
-    }
-    return !this.isAlive(pid)
-  }
-
-  private async terminateProcessTree(pid: number): Promise<void> {
-    this.log?.("debug", "terminate_tree", `pid=${pid}`)
-    try { process.kill(-pid, "SIGTERM") } catch {}
-    try { process.kill(pid, "SIGTERM") } catch {}
-
-    if (await this.waitForExit(pid, 2500)) return
-
-    try { process.kill(-pid, "SIGKILL") } catch {}
-    try { process.kill(pid, "SIGKILL") } catch {}
-    await this.waitForExit(pid, 1000)
   }
 
   /** Poll a PID for liveness when we don't own the child process (reconnect case). */
   private watchPid(pid: number): void {
     if (this.pidWatcher) clearInterval(this.pidWatcher)
     this.pidWatcher = setInterval(() => {
-      try {
-        process.kill(pid, 0)
-      } catch {
+      if (!isAlive(pid)) {
         clearInterval(this.pidWatcher!)
         this.pidWatcher = null
         if (this._state === "running") {
