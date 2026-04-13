@@ -40,11 +40,15 @@ function augmentPath(env: NodeJS.ProcessEnv): void {
   env.PATH = parts.join(path.delimiter)
 }
 
+function isOrphan(proc: ProcessInfo): boolean {
+  return process.platform === "win32" ? !isAlive(proc.ppid) : proc.ppid === 1
+}
+
 export function parseOrphanOpencodePids(procs: ProcessInfo[]): number[] {
   return procs
     .filter((proc) =>
       proc.command === "opencode serve --hostname=127.0.0.1 --port=0"
-      && (process.platform === "win32" ? !isAlive(proc.ppid) : proc.ppid === 1)
+      && isOrphan(proc)
     )
     .map((proc) => proc.pid)
 }
@@ -53,7 +57,7 @@ export function parseOrphanClaudeSdkPids(procs: ProcessInfo[]): number[] {
   return procs
     .filter((proc) =>
       (proc.command.includes("@anthropic-ai/claude-agent-sdk") || proc.command.includes("claude-agent-sdk/cli.js"))
-      && (process.platform === "win32" ? !isAlive(proc.ppid) : proc.ppid === 1)
+      && isOrphan(proc)
     )
     .map((proc) => proc.pid)
 }
@@ -93,8 +97,7 @@ export class AtelierServerManager {
     const serverEntry = path.resolve(thisDir, "../../server/src/index.ts")
 
     // Clean up leaked orphan processes from previous crashes
-    await this.killOrphanOpencodeProcesses()
-    await this.killOrphanClaudeSdkProcesses()
+    await this.killOrphanProcesses()
 
     // Kill any stale server from a previous session that wasn't cleaned up
     await this.killStaleProcess(options.cwd)
@@ -233,28 +236,22 @@ export class AtelierServerManager {
   async stop(): Promise<void> {
     this.stopping = true
     if (this.pidWatcher) { clearInterval(this.pidWatcher); this.pidWatcher = null }
-    if (this.proc) {
-      if (this.proc.pid) {
-        // On Windows, attempt graceful shutdown via HTTP before killing the process tree
-        if (process.platform === "win32" && this._atelierUrl) {
-          try {
-            await fetch(`${this._atelierUrl}/shutdown`, { method: "POST" })
-            if (await waitForExit(this.proc.pid, 2000)) {
-              this.proc = null
-              this._atelierUrl = null
-              if (this._state !== "idle") {
-                this.setState("stopped")
-              }
-              return
-            }
-          } catch {
-            // Server already dead or unreachable — fall through to terminateProcessTree
-          }
+    if (this.proc?.pid) {
+      let exited = false
+      // On Windows, attempt graceful shutdown via HTTP before killing the process tree
+      if (process.platform === "win32" && this._atelierUrl) {
+        try {
+          await fetch(`${this._atelierUrl}/shutdown`, { method: "POST" })
+          exited = await waitForExit(this.proc.pid, 2000)
+        } catch {
+          // Server already dead or unreachable — fall through to terminateProcessTree
         }
+      }
+      if (!exited) {
         await terminateProcessTree(this.proc.pid)
       }
-      this.proc = null
     }
+    this.proc = null
     this._atelierUrl = null
     if (this._state !== "idle") {
       this.setState("stopped")
@@ -286,31 +283,20 @@ export class AtelierServerManager {
       const pid = parseInt(fs.readFileSync(pidPath, "utf-8").split("\n")[0]!, 10)
       if (!isNaN(pid) && isAlive(pid)) {
         this.log?.("debug", "pid_file_read", `path=${pidPath}`)
-        // Kill the process group to also clean up opencode child
         await terminateProcessTree(pid)
       }
     } catch { /* PID file unreadable */ }
     try { fs.unlinkSync(pidPath) } catch { /* already removed */ }
   }
 
-  /** Kill orphaned opencode serve processes that match Atelier's ephemeral signature. */
-  private async killOrphanOpencodeProcesses(): Promise<void> {
+  /** Kill orphaned opencode serve and claude-agent-sdk processes from previous crashes. */
+  private async killOrphanProcesses(): Promise<void> {
     const procs = listProcesses()
-    const pids = parseOrphanOpencodePids(procs)
-    this.log?.("debug", "orphan_scan", `found=${pids.length}`)
+    const opencodePids = parseOrphanOpencodePids(procs)
+    const sdkPids = parseOrphanClaudeSdkPids(procs)
+    this.log?.("debug", "orphan_scan", `opencode=${opencodePids.length} sdk=${sdkPids.length}`)
 
-    for (const pid of pids) {
-      await terminateProcessTree(pid)
-    }
-  }
-
-  /** Kill orphaned claude-agent-sdk CLI processes (ppid=1, parent server died). */
-  private async killOrphanClaudeSdkProcesses(): Promise<void> {
-    const procs = listProcesses()
-    const pids = parseOrphanClaudeSdkPids(procs)
-    this.log?.("debug", "orphan_sdk_scan", `found=${pids.length}`)
-
-    for (const pid of pids) {
+    for (const pid of [...opencodePids, ...sdkPids]) {
       await terminateProcessTree(pid)
     }
   }
