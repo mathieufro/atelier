@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { describe, it, expect } from "vitest"
-import { isAlive, waitForExit, listProcesses, terminateProcessTree } from "../src/process-platform"
+import { isAlive, waitForExit, listProcesses, terminateProcessTree, parseUnixPsOutput, parseWindowsCsvOutput } from "../src/process-platform"
 
 describe("isAlive", () => {
   it("returns true for the current process", () => {
@@ -111,5 +111,137 @@ describe("terminateProcessTree", () => {
     await expect(
       terminateProcessTree(999_999, { graceMs: 100, forceMs: 100 })
     ).resolves.toBeUndefined()
+  })
+})
+
+describe("parseUnixPsOutput", () => {
+  it("parses standard ps output with header", () => {
+    const stdout = [
+      "  PID  PPID COMMAND",
+      "    1     0 /sbin/init",
+      " 1234   100 /usr/bin/node server.js",
+      "  567     1 opencode serve --hostname=127.0.0.1 --port=0",
+    ].join("\n")
+
+    const procs = parseUnixPsOutput(stdout)
+    expect(procs).toEqual([
+      { pid: 1, ppid: 0, command: "/sbin/init" },
+      { pid: 1234, ppid: 100, command: "/usr/bin/node server.js" },
+      { pid: 567, ppid: 1, command: "opencode serve --hostname=127.0.0.1 --port=0" },
+    ])
+  })
+
+  it("skips malformed lines", () => {
+    const stdout = [
+      "  PID  PPID COMMAND",
+      "not-a-pid 100 something",
+      "  123",
+      "",
+      " 456   789 valid command",
+    ].join("\n")
+
+    const procs = parseUnixPsOutput(stdout)
+    expect(procs).toEqual([
+      { pid: 456, ppid: 789, command: "valid command" },
+    ])
+  })
+
+  it("returns empty array for empty output", () => {
+    expect(parseUnixPsOutput("")).toEqual([])
+  })
+
+  it("returns empty array for header-only output", () => {
+    expect(parseUnixPsOutput("  PID  PPID COMMAND\n")).toEqual([])
+  })
+
+  it("handles commands with multiple spaces", () => {
+    const stdout = "  PID  PPID COMMAND\n 100     1 /usr/bin/node  --max-old-space-size=4096  app.js\n"
+    const procs = parseUnixPsOutput(stdout)
+    expect(procs).toHaveLength(1)
+    expect(procs[0]!.command).toBe("/usr/bin/node  --max-old-space-size=4096  app.js")
+  })
+})
+
+describe("parseWindowsCsvOutput", () => {
+  it("parses standard CSV output with header", () => {
+    const stdout = [
+      '"ProcessId","ParentProcessId","CommandLine"',
+      '"1234","100","C:\\Program Files\\nodejs\\node.exe server.js"',
+      '"5678","1234","opencode serve --hostname=127.0.0.1 --port=0"',
+    ].join("\n")
+
+    const procs = parseWindowsCsvOutput(stdout)
+    expect(procs).toEqual([
+      { pid: 1234, ppid: 100, command: "C:\\Program Files\\nodejs\\node.exe server.js" },
+      { pid: 5678, ppid: 1234, command: "opencode serve --hostname=127.0.0.1 --port=0" },
+    ])
+  })
+
+  it("handles null CommandLine (empty quoted field)", () => {
+    const stdout = [
+      '"ProcessId","ParentProcessId","CommandLine"',
+      '"4","0",""',
+    ].join("\n")
+
+    const procs = parseWindowsCsvOutput(stdout)
+    expect(procs).toEqual([
+      { pid: 4, ppid: 0, command: "" },
+    ])
+  })
+
+  it("handles null CommandLine (unquoted trailing comma variant)", () => {
+    const stdout = [
+      '"ProcessId","ParentProcessId","CommandLine"',
+      '"4","0",',
+    ].join("\n")
+
+    const procs = parseWindowsCsvOutput(stdout)
+    expect(procs).toEqual([
+      { pid: 4, ppid: 0, command: "" },
+    ])
+  })
+
+  it("handles \\r\\n line endings from PowerShell", () => {
+    const stdout = '"ProcessId","ParentProcessId","CommandLine"\r\n"100","50","node.exe app.js"\r\n"200","50","bun.exe run server"\r\n'
+
+    const procs = parseWindowsCsvOutput(stdout)
+    expect(procs).toEqual([
+      { pid: 100, ppid: 50, command: "node.exe app.js" },
+      { pid: 200, ppid: 50, command: "bun.exe run server" },
+    ])
+  })
+
+  it("skips malformed lines", () => {
+    const stdout = [
+      '"ProcessId","ParentProcessId","CommandLine"',
+      "not csv at all",
+      '"abc","def","ghi"',
+      "",
+      '"999","1","valid.exe"',
+    ].join("\n")
+
+    const procs = parseWindowsCsvOutput(stdout)
+    expect(procs).toEqual([
+      { pid: 999, ppid: 1, command: "valid.exe" },
+    ])
+  })
+
+  it("returns empty array for empty output", () => {
+    expect(parseWindowsCsvOutput("")).toEqual([])
+  })
+
+  it("returns empty array for header-only output", () => {
+    expect(parseWindowsCsvOutput('"ProcessId","ParentProcessId","CommandLine"\n')).toEqual([])
+  })
+
+  it("handles commands with commas and quotes", () => {
+    const stdout = [
+      '"ProcessId","ParentProcessId","CommandLine"',
+      '"100","1","C:\\Program Files (x86)\\app.exe --flag=value"',
+    ].join("\n")
+
+    const procs = parseWindowsCsvOutput(stdout)
+    expect(procs).toHaveLength(1)
+    expect(procs[0]!.command).toBe("C:\\Program Files (x86)\\app.exe --flag=value")
   })
 })
