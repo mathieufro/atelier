@@ -29,6 +29,7 @@ function augmentPath(env: NodeJS.ProcessEnv): void {
   ]
   if (process.platform === "win32") {
     extra.push(path.join(process.env.LOCALAPPDATA ?? "", "bun"))
+    extra.push(path.join(process.env.ProgramData ?? "C:\\ProgramData", "chocolatey", "bin"))
   } else {
     extra.push("/usr/local/bin", "/opt/homebrew/bin")
   }
@@ -137,6 +138,39 @@ export class AtelierServerManager {
 
     const env: NodeJS.ProcessEnv = { ...process.env }
     augmentPath(env)
+    // Strip env vars that can break child Node/Bun processes and the Claude SDK.
+    //
+    // VS Code-injected (NODE_OPTIONS=--inspect makes subprocesses try to open debug
+    // ports and hang; ELECTRON_RUN_AS_NODE confuses Bun; VSCODE_* leak workbench state).
+    //
+    // Claude Code extension-injected (CLAUDECODE, CLAUDE_CODE_ENTRYPOINT,
+    // CLAUDE_CODE_EXECPATH): these tell the Claude Agent SDK "you're running INSIDE a
+    // Claude Code VS Code session, connect to the extension's IPC." Atelier's server
+    // needs an INDEPENDENT SDK session — without stripping, the SDK's `query()` tries
+    // to attach to the extension's IPC pipe/MCP server, blocks forever waiting for
+    // a response that never comes, and `supportedModels()` hangs.
+    for (const key of [
+      "NODE_OPTIONS",
+      "ELECTRON_RUN_AS_NODE",
+      "ELECTRON_NO_ATTACH_CONSOLE",
+      "VSCODE_INSPECTOR_OPTIONS",
+      "VSCODE_IPC_HOOK",
+      "VSCODE_IPC_HOOK_CLI",
+      "VSCODE_NLS_CONFIG",
+      "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+      "VSCODE_NODE_CACHED_DATA_DIR",
+      "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+      "VSCODE_CWD",
+      "VSCODE_PID",
+      "VSCODE_CODE_CACHE_PATH",
+      "VSCODE_ESM_ENTRYPOINT",
+      "CLAUDECODE",
+      "CLAUDE_CODE_ENTRYPOINT",
+      "CLAUDE_CODE_EXECPATH",
+      "CLAUDE_CODE_SSE_PORT",
+    ]) {
+      delete env[key]
+    }
     // Keep ATELIER_PORT env var for backward compat (tool-deployer, subprocess communication)
     if (settingsToWrite.serverPort) {
       env.ATELIER_PORT = String(settingsToWrite.serverPort)
@@ -146,10 +180,24 @@ export class AtelierServerManager {
 
     const runtime = getRuntime()
     const resolvedRuntime = resolveRuntime(runtime, env)
+    // Ensure the resolved runtime's directory is on PATH so the Claude Agent SDK
+    // (and any other subprocess the server spawns) can find "bun" by bare name.
+    // resolveRuntime may find bun at a deep Chocolatey path that isn't on PATH.
+    if (path.isAbsolute(resolvedRuntime)) {
+      const runtimeDir = path.dirname(resolvedRuntime)
+      const parts = (env.PATH ?? "").split(path.delimiter)
+      if (!parts.includes(runtimeDir)) {
+        env.PATH = `${runtimeDir}${path.delimiter}${env.PATH}`
+      }
+    }
     this.log?.("debug", "server_spawning", `command=${resolvedRuntime} run ${serverEntry}`)
     const proc = spawn(resolvedRuntime, ["run", serverEntry, options.cwd], {
       cwd: options.cwd,
-      stdio: ["ignore", "pipe", "pipe"],
+      // stdin must be a real pipe (not "ignore") because on Windows the Claude Agent SDK
+      // spawns claude.exe as a subprocess that inherits the server's stdio; with stdin
+      // ignored (NUL handle), subprocess calls like `query().supportedModels()` hang
+      // indefinitely. An empty pipe gives the SDK a valid stdin handle to inherit.
+      stdio: ["pipe", "pipe", "pipe"],
       env,
       detached: process.platform !== "win32",
       windowsHide: true,
@@ -157,14 +205,27 @@ export class AtelierServerManager {
       // runtime was not pre-resolved to an absolute path (e.g., chocolatey's bun.exe).
       shell: process.platform === "win32" && !path.isAbsolute(resolvedRuntime),
     })
+    // Close our end of stdin so the server gets EOF if it ever reads
+    proc.stdin?.end()
     this.proc = proc
     this.log?.("debug", "server_spawned", `pid=${proc.pid}`)
 
-    // Capture stderr so startup crashes include the actual error message
+    // Drain stdout so the pipe buffer never fills up. On Windows the default
+    // stdio pipe is ~8KB; once full, the server's writes (and any subprocess
+    // inheriting the pipe — like the Claude Agent SDK's claude.exe) block
+    // indefinitely, making /config and other endpoints appear to hang.
+    proc.stdout?.on("data", () => {})
+    // Capture stderr so startup crashes include the actual error message.
+    // Cap the buffer size to avoid unbounded memory growth during long sessions.
     let stderrBuffer = ""
-    proc.stderr?.on("data", (chunk: Buffer) => { stderrBuffer += chunk.toString() })
+    const STDERR_CAP = 64_000
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      stderrBuffer += chunk.toString()
+      if (stderrBuffer.length > STDERR_CAP) stderrBuffer = stderrBuffer.slice(-STDERR_CAP)
+    })
 
-    const atelierUrl = await this.waitForPidFile(options.cwd, proc, 10000, options.signal, () => stderrBuffer)
+    const spawnedAt = Date.now()
+    const atelierUrl = await this.waitForPidFile(options.cwd, proc, spawnedAt, 15000, options.signal, () => stderrBuffer)
     this._atelierUrl = atelierUrl
 
     await this.pollHealth(atelierUrl, 10000)
@@ -342,7 +403,7 @@ export class AtelierServerManager {
     }, 2000)
   }
 
-  private async waitForPidFile(cwd: string, proc: ChildProcess, timeoutMs: number, signal?: AbortSignal, getStderr?: () => string): Promise<string> {
+  private async waitForPidFile(cwd: string, proc: ChildProcess, spawnedAt: number, timeoutMs: number, signal?: AbortSignal, getStderr?: () => string): Promise<string> {
     const pidPath = path.join(atelierStateDir(cwd), "atelier.pid")
     const deadline = Date.now() + timeoutMs
 
@@ -354,10 +415,17 @@ export class AtelierServerManager {
       }
 
       try {
-        const contents = fs.readFileSync(pidPath, "utf-8").trim().split("\n")
-        const pid = parseInt(contents[0]!, 10)
-        const url = contents[1]
-        if (!isNaN(pid) && url && pid === proc.pid) return url
+        const stat = fs.statSync(pidPath)
+        // Accept the pid file only if it was written after we spawned (avoids stale files
+        // from a previous server). PID equality is unreliable on Windows because Bun
+        // wraps `bun run` in a parent process, so process.pid in the script differs
+        // from spawn's proc.pid. mtime freshness is the cross-platform reliable check.
+        if (stat.mtimeMs >= spawnedAt - 1000) {
+          const contents = fs.readFileSync(pidPath, "utf-8").trim().split("\n")
+          const pid = parseInt(contents[0]!, 10)
+          const url = contents[1]
+          if (!isNaN(pid) && url) return url
+        }
       } catch { /* file not written yet */ }
 
       await new Promise(r => setTimeout(r, 100))
