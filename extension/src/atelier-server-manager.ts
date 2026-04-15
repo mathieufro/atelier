@@ -40,6 +40,27 @@ function augmentPath(env: NodeJS.ProcessEnv): void {
   env.PATH = parts.join(path.delimiter)
 }
 
+/**
+ * Resolve a runtime name (e.g. "bun") to an absolute path if we can find one.
+ * Falls back to the bare name so Node's spawn can try PATHEXT resolution.
+ * On Windows, Node's spawn without shell does not reliably walk PATHEXT for
+ * extensionless names; we try common install locations first.
+ */
+function resolveRuntime(runtime: string, env: NodeJS.ProcessEnv): string {
+  if (path.isAbsolute(runtime)) return runtime
+  if (process.platform !== "win32") return runtime
+
+  const candidates = [
+    path.join(os.homedir(), ".bun", "bin", `${runtime}.exe`),
+    path.join(env.LOCALAPPDATA ?? "", "bun", `${runtime}.exe`),
+    path.join(process.env.ProgramData ?? "C:\\ProgramData", "chocolatey", "bin", `${runtime}.exe`),
+  ]
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) return c } catch {}
+  }
+  return runtime
+}
+
 function isOrphan(proc: ProcessInfo): boolean {
   return process.platform === "win32" ? !isAlive(proc.ppid) : proc.ppid === 1
 }
@@ -55,10 +76,11 @@ export function parseOrphanOpencodePids(procs: ProcessInfo[]): number[] {
 
 export function parseOrphanClaudeSdkPids(procs: ProcessInfo[]): number[] {
   return procs
-    .filter((proc) =>
-      (proc.command.includes("@anthropic-ai/claude-agent-sdk") || proc.command.includes("claude-agent-sdk/cli.js"))
-      && isOrphan(proc)
-    )
+    .filter((proc) => {
+      const cmd = proc.command.replace(/\\/g, "/")
+      return (cmd.includes("@anthropic-ai/claude-agent-sdk") || cmd.includes("claude-agent-sdk/cli.js"))
+        && isOrphan(proc)
+    })
     .map((proc) => proc.pid)
 }
 
@@ -123,13 +145,17 @@ export class AtelierServerManager {
     }
 
     const runtime = getRuntime()
-    this.log?.("debug", "server_spawning", `command=${runtime} run ${serverEntry}`)
-    const proc = spawn(runtime, ["run", serverEntry, options.cwd], {
+    const resolvedRuntime = resolveRuntime(runtime, env)
+    this.log?.("debug", "server_spawning", `command=${resolvedRuntime} run ${serverEntry}`)
+    const proc = spawn(resolvedRuntime, ["run", serverEntry, options.cwd], {
       cwd: options.cwd,
       stdio: ["ignore", "pipe", "pipe"],
       env,
       detached: process.platform !== "win32",
       windowsHide: true,
+      // On Windows, shell: true lets cmd.exe resolve via PATHEXT + PATH when the
+      // runtime was not pre-resolved to an absolute path (e.g., chocolatey's bun.exe).
+      shell: process.platform === "win32" && !path.isAbsolute(resolvedRuntime),
     })
     this.proc = proc
     this.log?.("debug", "server_spawned", `pid=${proc.pid}`)

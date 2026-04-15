@@ -95,7 +95,7 @@ describe("settings", () => {
 
   describe("settingsPath", () => {
     it("returns path inside stateDir", () => {
-      expect(settingsPath("/foo/bar")).toBe("/foo/bar/settings.json")
+      expect(settingsPath("/foo/bar")).toBe(path.join("/foo/bar", "settings.json"))
     })
   })
 })

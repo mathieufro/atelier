@@ -900,11 +900,13 @@ describe("forkSession", () => {
     expect(meta!.title).toBe("My fork")
     expect(meta!.status).toBe("idle")
 
-    // Verify symlink: {newAtelierId}.jsonl → sdk-forked-123.jsonl
-    const symlinkPath = path.join(tmpDir, `${result.id}.jsonl`)
-    expect(fs.existsSync(symlinkPath)).toBe(true)
-    const target = fs.readlinkSync(symlinkPath)
-    expect(path.basename(target)).toBe("sdk-forked-123.jsonl")
+    // Verify link: {newAtelierId}.jsonl points to (or copies) sdk-forked-123.jsonl.
+    // On Unix this is a symlink; on Windows it may be a hardlink or copy (linkOrCopy fallback).
+    // Cross-platform: verify the file exists and its content matches the source.
+    const linkPath = path.join(tmpDir, `${result.id}.jsonl`)
+    expect(fs.existsSync(linkPath)).toBe(true)
+    const sourceContent = fs.readFileSync(path.join(tmpDir, "sdk-forked-123.jsonl"), "utf-8")
+    expect(fs.readFileSync(linkPath, "utf-8")).toBe(sourceContent)
   })
 
   it("throws when source session not found in metadata", async () => {

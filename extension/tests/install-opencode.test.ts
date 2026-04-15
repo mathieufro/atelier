@@ -41,7 +41,8 @@ describe("installOpencode", () => {
   it("reports progress and resolves with binary path on success", async () => {
     mockExistsSync.mockReturnValue(true)
     const result = await installOpencode(progress)
-    expect(result).toContain(".opencode/bin/opencode")
+    // Normalize separators so assertion works on both Unix (/) and Windows (\)
+    expect(result.replace(/\\/g, "/")).toContain(".opencode/bin/opencode")
     expect(progress.report).toHaveBeenCalledWith(expect.objectContaining({ message: "Downloading OpenCode..." }))
     expect(progress.report).toHaveBeenCalledWith(expect.objectContaining({ message: "OpenCode installed successfully" }))
   })

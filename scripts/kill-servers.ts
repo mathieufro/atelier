@@ -1,7 +1,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import * as os from "node:os"
-import { terminateProcessTree } from "@atelier/core/process-platform"
+import { terminateProcessTree } from "../packages/core/src/process-platform.ts"
 
 async function main() {
   const atelierDir = path.join(os.homedir(), ".atelier")

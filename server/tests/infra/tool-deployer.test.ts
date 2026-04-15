@@ -4,7 +4,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import * as os from "node:os"
 
-describe("deployCallbackTool", () => {
+// bun install can take >5s on Windows (antivirus, slower FS), so extend timeout
+describe("deployCallbackTool", { timeout: 30_000 }, () => {
   let tempDir: string
 
   beforeEach(() => {
@@ -12,7 +13,9 @@ describe("deployCallbackTool", () => {
   })
 
   afterEach(() => {
-    fs.rmSync(tempDir, { recursive: true, force: true })
+    // Windows can briefly hold file handles after bun install; retry once on EPERM
+    try { fs.rmSync(tempDir, { recursive: true, force: true }) }
+    catch { try { fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) } catch {} }
   })
 
   it("creates tools/ directory, writes tool file and package.json", async () => {
