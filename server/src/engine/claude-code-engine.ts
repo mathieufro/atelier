@@ -1205,19 +1205,64 @@ export class ClaudeCodeEngine implements AgentEngine {
 
   /** Fetch supported models from the Claude Code CLI via a lightweight query */
   async fetchSupportedModels(): Promise<Array<{ value: string; displayName: string; description: string }>> {
-    const queryFn = this.queryFactory
-    if (!queryFn) throw new Error("Claude Code SDK not available")
+    // The SDK's supportedModels() relies on bidirectional stdio with its claude.exe
+    // subprocess. On Windows when our server is itself a child process (Node →
+    // Bun in VS Code's extension host case), that pipe communication silently
+    // hangs — see https://github.com/anthropics/claude-agent-sdk-python/issues/208
+    // Workaround: run the SDK call in a fresh top-level Bun subprocess that we
+    // spawn here. The SDK works correctly when its host is a top-level process.
+    const { spawn } = await import("node:child_process")
+    const path = await import("node:path")
+    const url = await import("node:url")
+    const helperPath = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), "fetch-claude-models.ts")
 
-    const q = queryFn({ prompt: "hi", options: { maxTurns: 1 } })
-    try {
-      if (typeof (q as any).supportedModels !== "function") {
-        throw new Error("supportedModels not available on query object")
-      }
-      const models = await (q as any).supportedModels()
-      return models
-    } finally {
-      try { q.close() } catch {}
-    }
+    const t0 = Date.now()
+    this.log?.info("atelier", "session", "fetchSupportedModels_start", { data: { helperPath } })
+
+    return await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ["run", helperPath], {
+        cwd: path.dirname(helperPath),
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        env: process.env,
+      })
+
+      let stdout = ""
+      let stderr = ""
+      child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString() })
+      child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
+
+      const TIMEOUT_MS = 15_000
+      const timer = setTimeout(() => {
+        try { child.kill("SIGKILL") } catch {}
+        reject(new Error(`fetch-claude-models helper timed out after ${TIMEOUT_MS}ms`))
+      }, TIMEOUT_MS)
+
+      child.on("error", (err) => {
+        clearTimeout(timer)
+        reject(new Error(`fetch-claude-models helper spawn error: ${err.message}`))
+      })
+
+      child.on("exit", (code) => {
+        clearTimeout(timer)
+        const elapsedMs = Date.now() - t0
+        try {
+          const parsed = JSON.parse(stdout) as { models?: Array<{ value: string; displayName: string; description: string }>; error?: string }
+          if (parsed.error) {
+            this.log?.error("atelier", "session", "supportedModels_failed", { error: parsed.error, data: { elapsedMs, stderr: stderr.slice(0, 500) } })
+            reject(new Error(parsed.error))
+          } else if (parsed.models) {
+            this.log?.info("atelier", "session", "supportedModels_returned", { data: { elapsedMs, count: parsed.models.length } })
+            resolve(parsed.models)
+          } else {
+            reject(new Error(`Unexpected helper output: ${stdout.slice(0, 200)}`))
+          }
+        } catch (err) {
+          this.log?.error("atelier", "session", "supportedModels_failed", { error: `helper exit code ${code}, parse error: ${err instanceof Error ? err.message : String(err)}`, data: { elapsedMs, stdout: stdout.slice(0, 500), stderr: stderr.slice(0, 500) } })
+          reject(new Error(`fetch-claude-models helper exit code ${code}: ${stderr.slice(0, 200) || stdout.slice(0, 200) || "no output"}`))
+        }
+      })
+    })
   }
 
   /**

@@ -15,13 +15,27 @@ import { atelierStateDir } from "@atelier/core/state-dir"
 import { readSettings } from "@atelier/core/settings"
 import { createLogger } from "./infra/logger.js"
 import { meetsLevel, type LogLevel } from "@atelier/core"
-import { spawn, type ChildProcess } from "node:child_process"
+import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import * as path from "node:path"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import { terminateProcessTree } from "@atelier/core/process-platform"
 import type { IdleDetectorStagePolicyOverride } from "./orchestration/idle-detector-config.js"
+
+// Ensure the runtime executable's directory is on PATH so the Claude Agent SDK
+// (and any other subprocess) can resolve "bun" when spawning child processes.
+// On Windows, Bun installed via Chocolatey lives at a deep path like
+// C:\ProgramData\chocolatey\lib\bun\tools\bun-windows-x64\bun.exe — which is
+// NOT on PATH by default. Without this, the SDK's spawn("bun", ["cli.js",...])
+// fails silently and supportedModels()/query() promises never resolve.
+{
+  const execDir = path.dirname(process.execPath)
+  const currentPath = process.env.PATH ?? ""
+  if (!currentPath.split(path.delimiter).includes(execDir)) {
+    process.env.PATH = `${execDir}${path.delimiter}${currentPath}`
+  }
+}
 
 const workspacePath = process.argv[2] || process.cwd()
 
@@ -69,6 +83,25 @@ function buildOpenCodeConfig(workspace: string): string {
 
 let opencodeUrl: string | null = null
 let opencodeProc: ChildProcess | null = null
+
+/**
+ * Check whether `opencode` is on PATH and executable. Used as a pre-flight guard
+ * before attempting to spawn it — on Bun, spawn() throws synchronously on ENOENT
+ * in a way that bypasses Promise rejection handling.
+ */
+function isOpencodeAvailable(): boolean {
+  try {
+    const result = spawnSync("opencode", ["--version"], {
+      stdio: "ignore",
+      windowsHide: true,
+      timeout: 3000,
+      shell: process.platform === "win32",
+    })
+    return result.status === 0
+  } catch {
+    return false
+  }
+}
 
 async function startOpenCode(knownAtelierPort: number, stateDir: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -130,6 +163,33 @@ async function main() {
   await deployCallbackTool(stateDir)
   await deployMcpSignalTool(stateDir)
   await deployResponderMcp(stateDir)
+
+  // Clean stale ~/.claude/ide/*.lock files whose owner PIDs are dead.
+  // These are left behind when VS Code windows crash/close unexpectedly. When
+  // the Claude Agent SDK spawns its claude subprocess, claude scans this dir
+  // to find an IDE to connect to; if it hits a stale lock whose TCP port is
+  // in a TIME_WAIT or half-open state, the subprocess can hang indefinitely.
+  try {
+    const claudeIdeDir = path.join(os.homedir(), ".claude", "ide")
+    if (fs.existsSync(claudeIdeDir)) {
+      let removed = 0
+      for (const name of fs.readdirSync(claudeIdeDir)) {
+        if (!name.endsWith(".lock")) continue
+        const lockPath = path.join(claudeIdeDir, name)
+        try {
+          const content = JSON.parse(fs.readFileSync(lockPath, "utf-8")) as { pid?: number }
+          const pid = typeof content.pid === "number" ? content.pid : 0
+          if (pid > 0) {
+            try { process.kill(pid, 0) } catch { fs.unlinkSync(lockPath); removed++ }
+          }
+        } catch { /* malformed lock — leave it */ }
+      }
+      if (removed > 0) {
+        // Can't log here yet (logger not created); use console.error for startup diagnostics
+        console.error(`[atelier] Cleaned ${removed} stale Claude IDE lock file(s)`)
+      }
+    }
+  } catch { /* non-fatal */ }
 
   const logger = createLogger({ workspacePath })
 
@@ -450,11 +510,24 @@ async function main() {
   })
 
   // Initialize OpenCode eagerly (non-blocking — server is already listening).
-  initOpenCode(actualPort!).catch((err) => {
-    engineError = (err as Error).message
-    rejectOpenCodeProxy!(err instanceof Error ? err : new Error(String(err)))
-    serverLogger.error("atelier", "server", "opencode_init_failed", { error: String(err) })
-  })
+  // Pre-flight check: opencode is an optional backend. If it's not on PATH, skip
+  // initialization entirely so the server can still run with only Claude Code
+  // (or any other backend). On Bun, spawn() throws synchronously on ENOENT,
+  // bypassing .catch(), so a synchronous availability probe is the reliable guard.
+  if (isOpencodeAvailable()) {
+    initOpenCode(actualPort!).catch((err) => {
+      engineError = (err as Error).message
+      rejectOpenCodeProxy!(err instanceof Error ? err : new Error(String(err)))
+      serverLogger.error("atelier", "server", "opencode_init_failed", { error: String(err) })
+    })
+  } else {
+    const msg = "OpenCode not installed — skipping OpenCode backend. Install from https://github.com/opencode-ai/opencode to enable."
+    serverLogger.info("atelier", "server", "opencode_not_installed")
+    rejectOpenCodeProxy!(new Error(msg))
+    // Attach a no-op .catch so Bun doesn't treat this as unhandled.
+    // Consumers that await the promise later still see the rejection.
+    openCodeProxyReady.catch(() => {})
+  }
 
   // Pre-warm claude-code backend (non-blocking — avoids cold-start on first anthropic message).
   registry.getEngine("claude-code").then(() =>

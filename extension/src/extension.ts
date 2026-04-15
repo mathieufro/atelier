@@ -1066,6 +1066,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<{
   const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
   ensureClient(workspacePath, context).catch(err => console.error("[atelier] Background startup failed:", err))
 
+  // Debug helper: auto-open panel when env var set (for automated testing)
+  if (process.env.ATELIER_AUTO_OPEN_PANEL) {
+    setTimeout(() => {
+      vscode.commands.executeCommand("atelier.openChat").then(undefined, (err) => console.error("[atelier] auto-open failed:", err))
+    }, 1000)
+  }
+
   // Check for Strobe (required for debugging/TDD in pipelines)
   // Non-blocking: runs after all commands are registered
   promptAndInstallStrobe().catch(err => console.error("[atelier] Strobe check failed:", err))
