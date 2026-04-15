@@ -17,7 +17,7 @@ export async function loadSkillCatalog(skillsDir: string): Promise<SkillInfo[]> 
   for (const entry of entries) {
     const skillPath = path.join(skillsDir, entry, "SKILL.md")
     try {
-      const raw = await fs.readFile(skillPath, "utf-8")
+      const raw = (await fs.readFile(skillPath, "utf-8")).replace(/\r\n/g, "\n")
       const match = raw.match(/^---\n([\s\S]*?)\n---/)
       if (!match) continue
       const frontmatter = match[1]!
@@ -91,7 +91,7 @@ If the signal tool fails or is unavailable, state your completion in your final 
 
 export async function loadSkill(skillName: string, skillsDir: string): Promise<string> {
   const skillPath = path.join(skillsDir, skillName, "SKILL.md")
-  const raw = await fs.readFile(skillPath, "utf-8")
+  const raw = (await fs.readFile(skillPath, "utf-8")).replace(/\r\n/g, "\n")
   // Strip YAML frontmatter (---\n...\n---) so agents see only the markdown content
   return raw.replace(/^---\n[\s\S]*?\n---\n*/, "")
 }

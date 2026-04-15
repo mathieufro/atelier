@@ -306,11 +306,14 @@ export async function listWorktrees(repoPath: string): Promise<WorktreeEntry[]> 
   if (result.exitCode !== 0) return []
   const entries: WorktreeEntry[] = []
   let current: Partial<WorktreeEntry> = {}
-  for (const line of result.stdout.split("\n")) {
+  for (const rawLine of result.stdout.split("\n")) {
+    const line = rawLine.replace(/\r$/, "")
     if (!line) continue
     if (line.startsWith("worktree ")) {
       if (current.path) entries.push(current as WorktreeEntry)
-      current = { path: line.slice("worktree ".length) }
+      // Git outputs paths with forward slashes even on Windows; normalize to native separators
+      // so equality checks against fs.realpathSync output work cross-platform.
+      current = { path: path.resolve(line.slice("worktree ".length)) }
     } else if (line.startsWith("HEAD ")) {
       current.head = line.slice("HEAD ".length)
     } else if (line.startsWith("branch ")) {

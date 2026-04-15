@@ -1,4 +1,4 @@
-# install.ps1 — Atelier Windows installer
+# install.ps1 -- Atelier Windows installer
 # Usage: .\install.ps1
 # Prerequisites: Bun (https://bun.sh), Git
 
@@ -35,7 +35,7 @@ if ($LASTEXITCODE -ne 0) { Write-Err "Build failed" }
 Write-Ok "Build complete"
 
 # Strobe not available on Windows
-Write-Warn "Strobe is not available on Windows — skipping installation"
+Write-Warn "Strobe is not available on Windows -- skipping installation"
 
 # MCP config
 if ((-not (Test-Path ".mcp.json")) -and (Test-Path ".mcp.json.example")) {
@@ -51,7 +51,7 @@ Write-Ok "Atelier installed!"
 Write-Host ""
 Write-Host "  Open VS Code and press Ctrl+Shift+A to start."
 Write-Host ""
-Write-Host "  You'll need at least one backend:"
+Write-Host "  You will need at least one backend:"
 Write-Host "    Claude Code: npm install -g @anthropic-ai/claude-code && claude login"
 Write-Host "    OpenCode:    See https://github.com/opencode-ai/opencode"
 Write-Host ""

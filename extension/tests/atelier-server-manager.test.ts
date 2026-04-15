@@ -4,6 +4,14 @@ import { type ProcessInfo } from "@atelier/core/process-platform"
 import * as processPlatform from "@atelier/core/process-platform"
 
 describe("parseOrphanOpencodePids", () => {
+  const originalPlatform = process.platform
+  beforeEach(() => {
+    Object.defineProperty(process, "platform", { value: "linux" })
+  })
+  afterEach(() => {
+    Object.defineProperty(process, "platform", { value: originalPlatform })
+  })
+
   it("returns PIDs of orphaned opencode serve processes (Unix: ppid=1)", () => {
     const procs: ProcessInfo[] = [
       { pid: 15787, ppid: 1, command: "opencode serve --hostname=127.0.0.1 --port=0" },
@@ -29,6 +37,14 @@ describe("parseOrphanOpencodePids", () => {
 })
 
 describe("parseOrphanClaudeSdkPids", () => {
+  const originalPlatform = process.platform
+  beforeEach(() => {
+    Object.defineProperty(process, "platform", { value: "linux" })
+  })
+  afterEach(() => {
+    Object.defineProperty(process, "platform", { value: originalPlatform })
+  })
+
   it("returns PIDs of orphaned claude-agent-sdk processes (Unix: ppid=1)", () => {
     const procs: ProcessInfo[] = [
       { pid: 100, ppid: 1, command: "node /path/to/@anthropic-ai/claude-agent-sdk/cli.js" },

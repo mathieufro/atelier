@@ -9,6 +9,17 @@ import { AsyncChannel } from "./async-channel.js"
 import { resolveMcpInstructions } from "./mcp-instructions.js"
 
 /**
+ * Create a filesystem link from target → source. Tries symlink first (works everywhere
+ * on Unix; on Windows requires admin or Developer Mode), falls back to hardlink
+ * (same inode, works without privileges but requires same filesystem), then copy.
+ */
+function linkOrCopy(source: string, target: string): void {
+  try { fs.symlinkSync(source, target); return } catch {}
+  try { fs.linkSync(source, target); return } catch {}
+  try { fs.copyFileSync(source, target) } catch {}
+}
+
+/**
  * Map variant string to maxThinkingTokens for the Claude Agent SDK.
  * The SDK has no "effort" option — it only supports maxThinkingTokens.
  * Returns undefined to use model defaults (no thinking cap).
@@ -634,7 +645,7 @@ export class ClaudeCodeEngine implements AgentEngine {
         }
         const atelierFile = path.join(this.transcriptDir, `${newId}.jsonl`)
         if (fs.existsSync(sdkFile) && !fs.existsSync(atelierFile)) {
-          fs.symlinkSync(sdkFile, atelierFile)
+          linkOrCopy(sdkFile, atelierFile)
         }
       } catch {
         // Non-critical
@@ -1242,9 +1253,9 @@ export class ClaudeCodeEngine implements AgentEngine {
         }
       }
 
-      // Create symlink: atelierSessionId.jsonl → SDK's JSONL
+      // Create link: atelierSessionId.jsonl → SDK's JSONL (symlink preferred, hardlink fallback on Windows)
       if (fs.existsSync(target) && !fs.existsSync(atelierFile)) {
-        fs.symlinkSync(target, atelierFile)
+        linkOrCopy(target, atelierFile)
       }
     } catch {
       // Non-critical
