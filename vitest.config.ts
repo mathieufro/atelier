@@ -1,17 +1,22 @@
 import { defineConfig } from "vitest/config"
 import solidPlugin from "vite-plugin-solid"
+import { fileURLToPath } from "node:url"
+
+function resolvePath(relativePath: string): string {
+  return fileURLToPath(new URL(relativePath, import.meta.url))
+}
 
 export default defineConfig({
   plugins: [solidPlugin()],
   resolve: {
     alias: {
-      "@atelier/core": new URL("./packages/core/src", import.meta.url).pathname,
-      "@atelier/ui": new URL("./packages/ui/src", import.meta.url).pathname,
-      "@atelier/server": new URL("./server/src", import.meta.url).pathname,
-      vscode: new URL("./extension/src/__mocks__/vscode.ts", import.meta.url).pathname,
-      "solid-js/web": new URL("./packages/ui/node_modules/solid-js/web", import.meta.url).pathname,
-      "solid-js/store": new URL("./packages/ui/node_modules/solid-js/store", import.meta.url).pathname,
-      "solid-js": new URL("./packages/ui/node_modules/solid-js", import.meta.url).pathname,
+      "@atelier/core": resolvePath("./packages/core/src"),
+      "@atelier/ui": resolvePath("./packages/ui/src"),
+      "@atelier/server": resolvePath("./server/src"),
+      vscode: resolvePath("./extension/src/__mocks__/vscode.ts"),
+      "solid-js/web": resolvePath("./packages/ui/node_modules/solid-js/web"),
+      "solid-js/store": resolvePath("./packages/ui/node_modules/solid-js/store"),
+      "solid-js": resolvePath("./packages/ui/node_modules/solid-js"),
     },
   },
   test: {

@@ -1314,7 +1314,7 @@ export class ClaudeCodeEngine implements AgentEngine {
     const session = this.sessions.get(sessionId)
     const servers: Record<string, unknown> = {
       "atelier-signal": {
-        command: "bun",
+        command: process.execPath,
         args: ["run", path.join(this.stateDir, "tools/mcp/atelier_signal_mcp.ts")],
         env: {
           ATELIER_PORT: String(this.port),
@@ -1325,7 +1325,7 @@ export class ClaudeCodeEngine implements AgentEngine {
     // Add responder tools for responder sessions
     if (session?.config.responderPipelineId) {
       servers["atelier-responder"] = {
-        command: "bun",
+        command: process.execPath,
         args: ["run", path.join(this.stateDir, "tools/mcp/atelier_responder_mcp.ts")],
         env: {
           ATELIER_PORT: String(this.port),

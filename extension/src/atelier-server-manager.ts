@@ -21,21 +21,32 @@ function getRuntime(): string {
  * Augment PATH with directories that common runtimes (bun, node) are installed to
  * but that VS Code's inherited environment may not include.
  */
-function augmentPath(env: NodeJS.ProcessEnv): void {
+function getRuntimeSearchDirs(env: NodeJS.ProcessEnv): string[] {
   const extra = [
     path.join(os.homedir(), ".opencode", "bin"),
     path.join(os.homedir(), ".bun", "bin"),
     path.join(os.homedir(), ".local", "bin"),
   ]
+  if (env.BUN_INSTALL) extra.push(path.join(env.BUN_INSTALL, "bin"))
   if (process.platform === "win32") {
-    extra.push(path.join(process.env.LOCALAPPDATA ?? "", "bun"))
-    extra.push(path.join(process.env.ProgramData ?? "C:\\ProgramData", "chocolatey", "bin"))
+    extra.push(path.join(env.LOCALAPPDATA ?? "", "bun"))
+    extra.push(path.join(env.ProgramData ?? "C:\\ProgramData", "chocolatey", "bin"))
+    extra.push(path.join(env.USERPROFILE ?? os.homedir(), "scoop", "persist", "bun", "bin"))
+    extra.push(path.join(env.USERPROFILE ?? os.homedir(), "scoop", "shims"))
+    extra.push(path.join(env.APPDATA ?? "", "npm"))
   } else {
+    if (env.HOMEBREW_PREFIX) extra.push(path.join(env.HOMEBREW_PREFIX, "bin"))
     extra.push("/usr/local/bin", "/opt/homebrew/bin")
+    extra.push("/home/linuxbrew/.linuxbrew/bin")
+    extra.push(path.join(os.homedir(), ".linuxbrew", "bin"))
   }
+  return extra.filter(Boolean)
+}
+
+function augmentPath(env: NodeJS.ProcessEnv): void {
   const current = env.PATH ?? ""
   const parts = current.split(path.delimiter).filter(Boolean)
-  for (const dir of extra) {
+  for (const dir of getRuntimeSearchDirs(env)) {
     if (!parts.includes(dir)) parts.unshift(dir)
   }
   env.PATH = parts.join(path.delimiter)
@@ -47,17 +58,29 @@ function augmentPath(env: NodeJS.ProcessEnv): void {
  * On Windows, Node's spawn without shell does not reliably walk PATHEXT for
  * extensionless names; we try common install locations first.
  */
-function resolveRuntime(runtime: string, env: NodeJS.ProcessEnv): string {
+export function resolveRuntime(runtime: string, env: NodeJS.ProcessEnv): string {
   if (path.isAbsolute(runtime)) return runtime
   if (process.platform !== "win32") return runtime
 
-  const candidates = [
-    path.join(os.homedir(), ".bun", "bin", `${runtime}.exe`),
-    path.join(env.LOCALAPPDATA ?? "", "bun", `${runtime}.exe`),
-    path.join(process.env.ProgramData ?? "C:\\ProgramData", "chocolatey", "bin", `${runtime}.exe`),
-  ]
-  for (const c of candidates) {
-    try { if (fs.existsSync(c)) return c } catch {}
+  const pathParts = (env.PATH ?? "")
+    .split(path.delimiter)
+    .map((part) => part.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean)
+  const extensions = path.extname(runtime)
+    ? [""]
+    : (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+        .split(";")
+        .filter(Boolean)
+  for (const dir of pathParts) {
+    for (const ext of extensions) {
+      const candidate = path.join(dir, `${runtime}${ext}`)
+      try { if (fs.existsSync(candidate)) return candidate } catch {}
+    }
+  }
+
+  for (const dir of getRuntimeSearchDirs(env)) {
+    const candidate = path.join(dir, `${runtime}.exe`)
+    try { if (fs.existsSync(candidate)) return candidate } catch {}
   }
   return runtime
 }

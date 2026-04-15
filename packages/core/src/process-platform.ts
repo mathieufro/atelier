@@ -1,8 +1,16 @@
 import { spawnSync } from "node:child_process"
+import * as path from "node:path"
 
 export type ProcessInfo = { pid: number; ppid: number; command: string }
 
 const IS_WINDOWS = process.platform === "win32"
+const WINDOWS_SYSTEM_ROOT = process.env.SystemRoot ?? "C:\\Windows"
+const WINDOWS_POWERSHELL = path.join(WINDOWS_SYSTEM_ROOT, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+const WINDOWS_TASKKILL = path.join(WINDOWS_SYSTEM_ROOT, "System32", "taskkill.exe")
+const WINDOWS_PROCESS_LIST_TIMEOUT_MS = 4000
+const WINDOWS_PROCESS_CACHE_TTL_MS = 250
+
+let windowsProcessCache: { expiresAt: number; procs: ProcessInfo[] } | null = null
 
 export function isAlive(pid: number): boolean {
   // Guard: pid <= 0 is never a valid user process.
@@ -28,7 +36,7 @@ export async function waitForExit(pid: number, timeoutMs: number): Promise<boole
 
 export function listProcesses(filter?: (proc: ProcessInfo) => boolean): ProcessInfo[] {
   try {
-    const procs = IS_WINDOWS ? listProcessesWindows() : listProcessesUnix()
+    const procs = IS_WINDOWS ? listProcessesWindowsCached() : listProcessesUnix()
     return filter ? procs.filter(filter) : procs
   } catch {
     return []
@@ -45,16 +53,31 @@ function listProcessesUnix(): ProcessInfo[] {
 }
 
 function listProcessesWindows(): ProcessInfo[] {
-  const result = spawnSync("powershell.exe", [
+  const result = spawnSync(WINDOWS_POWERSHELL, [
     "-NoProfile",
     "-Command",
     "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation",
   ], {
     encoding: "utf8",
+    timeout: WINDOWS_PROCESS_LIST_TIMEOUT_MS,
     windowsHide: true,
   })
   if (result.status !== 0 || !result.stdout) return []
   return parseWindowsCsvOutput(result.stdout)
+}
+
+function listProcessesWindowsCached(): ProcessInfo[] {
+  const now = Date.now()
+  if (windowsProcessCache && windowsProcessCache.expiresAt > now) return windowsProcessCache.procs
+
+  const procs = listProcessesWindows()
+  if (procs.length > 0) {
+    windowsProcessCache = {
+      expiresAt: now + WINDOWS_PROCESS_CACHE_TTL_MS,
+      procs,
+    }
+  }
+  return procs
 }
 
 /** @internal Exported for testing — parse Unix `ps -axo pid,ppid,command` output. */
@@ -109,7 +132,7 @@ export async function terminateProcessTree(
   if (IS_WINDOWS) {
     // taskkill /T /F kills the entire process tree. No graceful phase — it's atomic.
     try {
-      spawnSync("taskkill", ["/T", "/F", "/PID", String(pid)], {
+      spawnSync(WINDOWS_TASKKILL, ["/T", "/F", "/PID", String(pid)], {
         windowsHide: true,
       })
     } catch {}
