@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
-import { parseOrphanOpencodePids, parseOrphanClaudeSdkPids, AtelierServerManager } from "../src/atelier-server-manager"
+import { parseOrphanOpencodePids, parseOrphanClaudeSdkPids, AtelierServerManager, resolveRuntime } from "../src/atelier-server-manager"
 import { type ProcessInfo } from "@atelier/core/process-platform"
 import * as processPlatform from "@atelier/core/process-platform"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
 
 describe("parseOrphanOpencodePids", () => {
   const originalPlatform = process.platform
@@ -174,5 +177,64 @@ describe("AtelierServerManager.stop() — Windows path", () => {
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(terminateSpy).toHaveBeenCalledWith(12345)
     expect(manager.state).toBe("stopped")
+  })
+})
+
+describe("resolveRuntime", () => {
+  const originalPlatform = process.platform
+
+  afterEach(() => {
+    Object.defineProperty(process, "platform", { value: originalPlatform })
+  })
+
+  it("resolves bun.exe from PATH before falling back to guessed install directories", () => {
+    Object.defineProperty(process, "platform", { value: "win32" })
+
+    const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), "atelier-runtime-"))
+    const fakeBun = path.join(fakeDir, "bun.EXE")
+    fs.writeFileSync(fakeBun, "")
+
+    try {
+      expect(resolveRuntime("bun", {
+        PATH: fakeDir,
+        PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      })).toBe(fakeBun)
+    } finally {
+      fs.rmSync(fakeDir, { recursive: true, force: true })
+    }
+  })
+
+  it("resolves bun.exe from Scoop and npm fallback directories on Windows", () => {
+    Object.defineProperty(process, "platform", { value: "win32" })
+
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "atelier-runtime-home-"))
+    const fakeAppData = path.join(fakeHome, "AppData", "Roaming")
+    const runtime = "atelier-bun"
+    const scoopShim = path.join(fakeHome, "scoop", "shims", `${runtime}.exe`)
+    const npmBun = path.join(fakeAppData, "npm", `${runtime}.exe`)
+    fs.mkdirSync(path.dirname(scoopShim), { recursive: true })
+    fs.mkdirSync(path.dirname(npmBun), { recursive: true })
+    fs.writeFileSync(scoopShim, "")
+    fs.writeFileSync(npmBun, "")
+
+    try {
+      expect(resolveRuntime(runtime, {
+        PATH: "",
+        PATHEXT: ".COM;.EXE;.BAT;.CMD",
+        USERPROFILE: fakeHome,
+        APPDATA: fakeAppData,
+      })).toBe(scoopShim)
+
+      fs.rmSync(scoopShim, { force: true })
+
+      expect(resolveRuntime(runtime, {
+        PATH: "",
+        PATHEXT: ".COM;.EXE;.BAT;.CMD",
+        USERPROFILE: fakeHome,
+        APPDATA: fakeAppData,
+      })).toBe(npmBun)
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true })
+    }
   })
 })

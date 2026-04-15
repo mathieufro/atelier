@@ -771,7 +771,7 @@ describe("ClaudeCodeEngine", () => {
     const mcpServers = options.mcpServers as Record<string, unknown>
     expect(mcpServers).toBeTruthy()
     const signal = mcpServers["atelier-signal"] as Record<string, unknown>
-    expect(signal.command).toBe("bun")
+    expect(signal.command).toBe(process.execPath)
     expect((signal.args as string[])[1]).toContain("atelier_signal_mcp.ts")
     const env = signal.env as Record<string, string>
     expect(env.ATELIER_PORT).toBe("4321")
