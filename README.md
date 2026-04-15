@@ -67,10 +67,19 @@ Atelier runs on **macOS**, **Linux**, and **Windows 10/11**. CI runs on Ubuntu a
 ## Quick Start
 
 1. **Clone and install:**
+
+   **macOS / Linux:**
    ```bash
    git clone https://github.com/mathieufro/atelier.git
    cd atelier
    ./install.sh
+   ```
+
+   **Windows (PowerShell):**
+   ```powershell
+   git clone https://github.com/mathieufro/atelier.git
+   cd atelier
+   .\install.ps1
    ```
 
 2. **Set up a backend** (at least one):
@@ -91,7 +100,7 @@ Atelier runs on **macOS**, **Linux**, and **Windows 10/11**. CI runs on Ubuntu a
    Both backends can run simultaneously — models appear in a unified picker.
 
 3. **Open Atelier:**
-   Press `Cmd+Shift+A` (macOS) or `Ctrl+Shift+A` (Linux) in VS Code. Pick a skill, describe your task.
+   Press `Cmd+Shift+A` (macOS) or `Ctrl+Shift+A` (Windows/Linux) in VS Code. Pick a skill, describe your task.
 
 ## Architecture
 
@@ -113,7 +122,7 @@ See [`docs/guide.md`](docs/guide.md) for the full user guide.
 ### Prerequisites
 
 - [Bun](https://bun.sh) (runtime + package manager)
-- [Strobe](https://github.com/mathieufro/strobe) (debugging infrastructure — installed by `install.sh`)
+- [Strobe](https://github.com/mathieufro/strobe) (debugging infrastructure — installed by `install.sh` on macOS/Linux; not available on Windows)
 
 ### Build
 
