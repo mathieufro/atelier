@@ -46,6 +46,19 @@ interface ClaudeCodeProxyOptions {
   workspacePath: string
 }
 
+/**
+ * Models the Claude Code CLI accepts via `--model` but the SDK's
+ * `supportedModels()` curated list doesn't yet advertise. Merged into
+ * `fetchModels()` output so they appear in the picker and pass
+ * `sendMessage` validation.
+ *
+ * On overlap with SDK entries, SDK wins (its display name/variants are
+ * authoritative). Remove an entry here once the SDK lists it.
+ */
+const EXTRA_ANTHROPIC_MODELS: ReadonlyArray<{ id: string; name: string }> = [
+  { id: "claude-opus-4-7", name: "Opus 4.7" },
+]
+
 export class ClaudeCodeProxy implements BackendProxy {
   private static readonly MODELS_CACHE_TTL_MS = 30_000
   private engine: ClaudeCodeEngine
@@ -572,6 +585,17 @@ export class ClaudeCodeProxy implements BackendProxy {
         providerID: "anthropic",
         variants: EFFORT_VARIANTS,
       }))
+      // Merge in CLI-supported-but-SDK-unlisted models. SDK entries win on overlap.
+      const sdkIds = new Set(this.cachedModels.map((m) => m.id))
+      for (const extra of EXTRA_ANTHROPIC_MODELS) {
+        if (sdkIds.has(extra.id)) continue
+        this.cachedModels.push({
+          id: extra.id,
+          name: extra.name,
+          providerID: "anthropic",
+          variants: EFFORT_VARIANTS,
+        })
+      }
       this.cachedModelsFetchedAt = Date.now()
       this.modelFetchPromise = null
       return this.cachedModels!

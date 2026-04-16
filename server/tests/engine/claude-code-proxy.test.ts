@@ -153,6 +153,39 @@ describe("ClaudeCodeProxy", () => {
     expect(mockEngine.sendMessage).not.toHaveBeenCalled()
   })
 
+  it("fetchModels merges CLI-supported-but-SDK-unlisted models", async () => {
+    // SDK returns only sonnet; EXTRA_ANTHROPIC_MODELS should fill in the gap
+    // so models Anthropic ships before the SDK's curated list catches up
+    // (e.g. Opus 4.7) appear in the picker and pass validation.
+    const config = await proxy.getConfig()
+    const ids = config.models.map((m) => m.id)
+    expect(ids).toContain("claude-sonnet-4-6")
+    expect(ids).toContain("claude-opus-4-7")
+
+    // Validation accepts the extra model — no throw, engine is called.
+    await proxy.sendMessage("s1", {
+      content: "Hello",
+      model: { providerID: "anthropic", modelID: "claude-opus-4-7" },
+    })
+    expect(mockEngine.sendMessage).toHaveBeenCalledWith("s1", expect.objectContaining({
+      model: { providerID: "anthropic", modelID: "claude-opus-4-7" },
+    }))
+  })
+
+  it("fetchModels prefers SDK entry when an extra model is later added to SDK", async () => {
+    // Simulate the SDK catching up and listing claude-opus-4-7 itself —
+    // it should appear only once, with the SDK's display name.
+    const fetchSupportedModels = mockEngine.fetchSupportedModels as ReturnType<typeof vi.fn>
+    fetchSupportedModels.mockResolvedValueOnce([
+      { value: "claude-opus-4-7", displayName: "Claude Opus 4.7 (official)" },
+    ])
+
+    const config = await proxy.getConfig()
+    const opus47 = config.models.filter((m) => m.id === "claude-opus-4-7")
+    expect(opus47).toHaveLength(1)
+    expect(opus47[0].name).toBe("Claude Opus 4.7 (official)")
+  })
+
   it("sendMessage force-refreshes model list before rejecting", async () => {
     const fetchSupportedModels = mockEngine.fetchSupportedModels as ReturnType<typeof vi.fn>
     fetchSupportedModels
