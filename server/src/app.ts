@@ -4,6 +4,7 @@ import type { createEventMerger } from "./engine/event-merger.js"
 import type { RalphLoopController } from "./ralph-loop-controller.js"
 import { modeToPermissionRuleset, sanitizeMessages, type PermissionRuleset } from "@atelier/core"
 import * as fs from "node:fs"
+import * as os from "node:os"
 import * as path from "node:path"
 import type { Attachment, BackendId, LogEvent, Mode, ModelRef, PipelineType, SkillInfo, Logger, StageModelConfig } from "@atelier/core"
 import { loadSkillCatalog, loadSkill } from "./orchestration/skill-loader.js"
@@ -1637,7 +1638,7 @@ export function createApp(options: AppOptions): Hono {
       console.error(msg)
       log?.error("atelier", "pipeline", "pipeline_completion_error", { pipelineId: result.pipelineId, error: String(err) })
       // Write to file for debugging in containers where stdout is buffered
-      try { require("node:fs").appendFileSync("/tmp/atelier-pipeline-errors.log", msg + "\n") } catch {}
+      try { fs.appendFileSync(path.join(os.tmpdir(), "atelier-pipeline-errors.log"), msg + "\n") } catch {}
     })
     return c.json({ pipelineId: result.pipelineId })
   }

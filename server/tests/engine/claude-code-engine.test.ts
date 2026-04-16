@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { ClaudeCodeEngine } from "../../src/engine/claude-code-engine.js"
 import { SessionMetadataStore } from "../../src/engine/session-metadata-store.js"
+import * as processPlatform from "@atelier/core/process-platform"
 import type { AtelierEvent } from "@atelier/core"
 import type { DetectorNormalizedEvent } from "../../src/orchestration/idle-detector-events.js"
 import { EventEmitter } from "node:events"
@@ -888,6 +889,41 @@ describe("ClaudeCodeEngine metadata store integration", () => {
     expect(metaStore.get(session.id)).toBeTruthy()
     await engine.deleteSession(session.id)
     expect(metaStore.get(session.id)).toBeNull()
+  })
+
+  it("deleteSession calls killSdkSubprocess with the session ID", async () => {
+    // Mock listProcesses to apply the filter argument, simulating real behavior
+    const allProcs = [
+      { pid: 42, ppid: 1, command: 'node /path/to/claude-agent-sdk/cli.js --mcp-config {"ATELIER_SESSION_ID":"PLACEHOLDER"}' },
+      { pid: 99, ppid: 1, command: "node /path/to/other-process.js" },
+    ]
+    const listSpy = vi.spyOn(processPlatform, "listProcesses").mockImplementation((filter) => {
+      return filter ? allProcs.filter(filter) : allProcs
+    })
+    const terminateSpy = vi.spyOn(processPlatform, "terminateProcessTree").mockResolvedValue(undefined)
+
+    const mockQueryFn = vi.fn()
+    const engine = new ClaudeCodeEngine({ queryFactory: mockQueryFn, metadataStore: metaStore })
+
+    const session = await engine.createSession({
+      directory: "/workspace",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const sessionId = session.id
+
+    // Update mock data with the real session ID so the filter matches PID 42
+    allProcs[0]!.command = `node /path/to/claude-agent-sdk/cli.js --mcp-config {"ATELIER_SESSION_ID":"${sessionId}"}`
+
+    await engine.deleteSession(sessionId)
+
+    expect(listSpy).toHaveBeenCalled()
+    // Only PID 42 matches the filter (claude-agent-sdk + session ID)
+    expect(terminateSpy).toHaveBeenCalledWith(42)
+    // PID 99 should NOT be killed (doesn't match filter)
+    expect(terminateSpy).not.toHaveBeenCalledWith(99)
+
+    listSpy.mockRestore()
+    terminateSpy.mockRestore()
   })
 
   it("updates title in metadata store", async () => {

@@ -109,6 +109,7 @@ async function startOpenCode(knownAtelierPort: number, stateDir: string): Promis
       cwd: workspacePath,
       detached: process.platform !== "win32",
       windowsHide: true,
+      shell: process.platform === "win32",
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
@@ -355,6 +356,7 @@ async function main() {
 
   const ralphController = new RalphLoopController(eventMerger)
 
+  // Assigned after Bun.serve() + pidPath are available, before any async setup begins.
   let shutdownRef: (() => Promise<void>) | undefined
 
   const app = createApp({
@@ -402,6 +404,42 @@ async function main() {
 
   const pidPath = path.join(stateDir, "atelier.pid")
   fs.writeFileSync(pidPath, `${process.pid}\nhttp://127.0.0.1:${actualPort}`, { mode: 0o600 })
+
+  // Define shutdown and wire it to shutdownRef BEFORE any async setup begins.
+  // Without this, POST /shutdown would be a no-op during the startup window
+  // between Bun.serve() and the end of initialization (the extension can discover
+  // the server URL from the PID file immediately after the write above).
+  let shuttingDown = false
+  const shutdown = async () => {
+    if (shuttingDown) return
+    shuttingDown = true
+    serverLogger.info("atelier", "server", "server_stopped")
+    // Rescue-commit any uncommitted worktree work before tearing down
+    await orchestrator.rescueAllWorktrees()
+    orchestrator.destroy()
+    pipelineState.markCrashedPipelinesAsIdle()
+    try { fs.unlinkSync(pidPath) } catch {}
+    await logger.flush()
+    logger.close()
+    // Interrupt all Claude Code sessions to kill SDK subprocesses
+    const claudeEngine = registry.getEngineIfReady("claude-code")
+    if (claudeEngine?.shutdown) {
+      await claudeEngine.shutdown()
+    }
+    if (opencodeProc?.pid) {
+      await terminateProcessTree(opencodeProc.pid)
+    }
+    openCodeEngine?.disconnect()
+    process.exit(0)
+  }
+
+  shutdownRef = shutdown
+
+  process.on("SIGTERM", shutdown)
+  process.on("SIGINT", shutdown)
+  // On Windows: SIGINT fires for Ctrl+C only; SIGHUP is a no-op (never fires).
+  // SIGTERM is delivered by Node/Bun when the extension calls process.kill(pid, "SIGTERM").
+  process.on("SIGHUP", shutdown)
 
   // Idle timeout check — every 30s, if idle > 10min and no active sessions/pipelines, self-terminate.
   // Engine activity callbacks reset lastActivityAt on every SDK yield, so active sessions prevent shutdown.
@@ -546,36 +584,6 @@ async function main() {
   }).catch(() => {
     // Non-critical — will retry on first sendMessage
   })
-
-  let shuttingDown = false
-  const shutdown = async () => {
-    if (shuttingDown) return
-    shuttingDown = true
-    serverLogger.info("atelier", "server", "server_stopped")
-    // Rescue-commit any uncommitted worktree work before tearing down
-    await orchestrator.rescueAllWorktrees()
-    orchestrator.destroy()
-    pipelineState.markCrashedPipelinesAsIdle()
-    try { fs.unlinkSync(pidPath) } catch {}
-    await logger.flush()
-    logger.close()
-    // Interrupt all Claude Code sessions to kill SDK subprocesses
-    const claudeEngine = registry.getEngineIfReady("claude-code")
-    if (claudeEngine?.shutdown) {
-      await claudeEngine.shutdown()
-    }
-    if (opencodeProc?.pid) {
-      await terminateProcessTree(opencodeProc.pid)
-    }
-    openCodeEngine?.disconnect()
-    process.exit(0)
-  }
-
-  shutdownRef = shutdown
-
-  process.on("SIGTERM", shutdown)
-  process.on("SIGINT", shutdown)
-  process.on("SIGHUP", shutdown)
 
   // Watch parent process (extension host) — if it dies, self-terminate to avoid orphaned bun processes.
   // When VS Code crashes or is force-killed, deactivate() never runs, so SIGTERM is never sent.
