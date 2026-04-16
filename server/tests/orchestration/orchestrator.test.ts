@@ -321,7 +321,7 @@ describe("Orchestrator", () => {
   })
 
   describe("idle detection observability", () => {
-    it("tracks transition metrics from detector decisions", async () => {
+    it("tracks transition metrics from detector decisions", { timeout: 20_000 }, async () => {
       const localEngine = new MockAgentEngine()
       localEngine.nextOutput = { text: "done", tokens: { input: 100, output: 50 } }
       const localState = createPipelineState(workspaceDir)
@@ -338,18 +338,21 @@ describe("Orchestrator", () => {
         detectorServerDefaults: {
           quietWindowMs: 50,
           quietCorroborationMs: 50,
+          busyCorroborationWindowMs: 0,
         },
       })
 
       const { sessionId } = await driveToStage(localOrchestrator, localEngine, localEvents, "write_plan", workspaceDir, localState)
       localOrchestrator.handleSessionIdle(sessionId)
 
-      // Wait for escalation and transition metrics to be recorded
+      // Wait for escalation and transition metrics to be recorded.
+      // Extended timeout (15s) because the 50ms setInterval sweep timer can drift
+      // significantly under full-suite load due to event loop contention.
       await waitFor(() => {
         const m = localOrchestrator.getIdleMetricsForTests()
         return (m.transitions["WORKING->QUIET_PENDING:write_plan"] ?? 0) >= 1
           && (m.transitions["QUIET_PENDING->IDLE_DETECTED:write_plan"] ?? 0) >= 1
-      })
+      }, 15_000)
 
       const metrics = localOrchestrator.getIdleMetricsForTests()
       expect(metrics.transitions["WORKING->QUIET_PENDING:write_plan"]).toBeGreaterThanOrEqual(1)

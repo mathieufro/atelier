@@ -182,7 +182,10 @@ function isOrphan(proc: ProcessInfo): boolean {
 export function parseOrphanOpencodePids(procs: ProcessInfo[]): number[] {
   return procs
     .filter((proc) =>
-      proc.command === "opencode serve --hostname=127.0.0.1 --port=0"
+      proc.command.includes("opencode")
+      && proc.command.includes("serve")
+      && proc.command.includes("--hostname=127.0.0.1")
+      && proc.command.includes("--port=0")
       && isOrphan(proc)
     )
     .map((proc) => proc.pid)
@@ -303,7 +306,10 @@ export class AtelierServerManager {
     if (path.isAbsolute(resolvedRuntime)) {
       const runtimeDir = path.dirname(resolvedRuntime)
       const parts = (env.PATH ?? "").split(path.delimiter)
-      if (!parts.includes(runtimeDir)) {
+      const alreadyInPath = process.platform === "win32"
+        ? parts.some((p) => p.toLowerCase() === runtimeDir.toLowerCase())
+        : parts.includes(runtimeDir)
+      if (!alreadyInPath) {
         env.PATH = `${runtimeDir}${path.delimiter}${env.PATH}`
       }
     }
@@ -447,7 +453,7 @@ export class AtelierServerManager {
       if (process.platform === "win32" && this._atelierUrl) {
         try {
           await fetch(`${this._atelierUrl}/shutdown`, { method: "POST" })
-          exited = await waitForExit(this.proc.pid, 2000)
+          exited = await waitForExit(this.proc.pid, 5000)
         } catch {
           // Server already dead or unreachable — fall through to terminateProcessTree
         }

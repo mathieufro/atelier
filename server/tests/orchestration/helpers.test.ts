@@ -37,4 +37,39 @@ describe("validateWithinWorkspace", () => {
     expect(() => validateWithinWorkspace(path.join("nested", "new-file.md"), workspaceDir, "outputPath"))
       .not.toThrow()
   })
+
+  it("rejects relative paths with .. traversal", () => {
+    const workspaceDir = createTmpDir("atelier-workspace-")
+
+    expect(() => validateWithinWorkspace("../../etc/passwd", workspaceDir, "promptPath"))
+      .toThrow(/within workspace/)
+  })
+
+  it("rejects absolute paths outside the workspace", () => {
+    const workspaceDir = createTmpDir("atelier-workspace-")
+    const outsideDir = createTmpDir("atelier-outside-")
+
+    expect(() => validateWithinWorkspace(path.join(outsideDir, "secret.md"), workspaceDir, "promptPath"))
+      .toThrow(/within workspace/)
+  })
+
+  it("rejects path-prefix false positive (workspace is a prefix of target path)", () => {
+    // Create /tmp/atelier-ws- and /tmp/atelier-ws-extra- to test that
+    // /tmp/atelier-ws- does NOT accept files under /tmp/atelier-ws-extra-
+    const workspaceDir = createTmpDir("atelier-ws-")
+    const similarDir = workspaceDir + "extra"
+    fs.mkdirSync(similarDir, { recursive: true })
+    tmpDirs.push(similarDir)
+    fs.writeFileSync(path.join(similarDir, "secret.md"), "top secret")
+
+    expect(() => validateWithinWorkspace(path.join(similarDir, "secret.md"), workspaceDir, "promptPath"))
+      .toThrow(/within workspace/)
+  })
+
+  it("allows the workspace root itself", () => {
+    const workspaceDir = createTmpDir("atelier-workspace-")
+
+    expect(() => validateWithinWorkspace(".", workspaceDir, "outputPath"))
+      .not.toThrow()
+  })
 })

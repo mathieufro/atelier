@@ -104,6 +104,19 @@ describe("orphan detection — Windows path", () => {
     expect(parseOrphanOpencodePids(procs)).toEqual([100])
   })
 
+  it("parseOrphanOpencodePids matches full Windows CommandLine paths", () => {
+    Object.defineProperty(process, "platform", { value: "win32" })
+
+    const procs: ProcessInfo[] = [
+      // Windows CommandLine includes the full executable path
+      { pid: 100, ppid: 999_999, command: "C:\\Users\\user\\.opencode\\bin\\opencode.exe serve --hostname=127.0.0.1 --port=0" },
+      // Different hostname — should NOT match
+      { pid: 200, ppid: 999_999, command: "C:\\Users\\user\\.opencode\\bin\\opencode.exe serve --hostname=0.0.0.0 --port=4096" },
+    ]
+
+    expect(parseOrphanOpencodePids(procs)).toEqual([100])
+  })
+
   it("parseOrphanClaudeSdkPids detects orphans with dead parent on Windows", () => {
     Object.defineProperty(process, "platform", { value: "win32" })
 
@@ -145,7 +158,7 @@ describe("AtelierServerManager.stop() — Windows path", () => {
     await manager.stop()
 
     expect(fetchSpy).toHaveBeenCalledWith("http://127.0.0.1:9999/shutdown", { method: "POST" })
-    expect(waitForExitSpy).toHaveBeenCalledWith(12345, 2000)
+    expect(waitForExitSpy).toHaveBeenCalledWith(12345, 5000)
     // terminateProcessTree should NOT be called — graceful shutdown succeeded
     expect(terminateSpy).not.toHaveBeenCalled()
     expect(manager.state).toBe("stopped")
@@ -161,7 +174,7 @@ describe("AtelierServerManager.stop() — Windows path", () => {
     await manager.stop()
 
     expect(fetchSpy).toHaveBeenCalledWith("http://127.0.0.1:9999/shutdown", { method: "POST" })
-    expect(waitForExitSpy).toHaveBeenCalledWith(12345, 2000)
+    expect(waitForExitSpy).toHaveBeenCalledWith(12345, 5000)
     // Process didn't exit — terminateProcessTree should be called as fallback
     expect(terminateSpy).toHaveBeenCalledWith(12345)
     expect(manager.state).toBe("stopped")
