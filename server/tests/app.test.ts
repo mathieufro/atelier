@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // Polyfill vi.mocked for Bun compatibility — it's a no-op identity cast in vitest
 if (!vi.mocked) (vi as any).mocked = <T>(fn: T): T => fn
-import { createApp, type AppOptions } from "../src/app.js"
+import { createApp, pickDefaultBackend, type AppOptions } from "../src/app.js"
 import { createEventMerger } from "../src/engine/event-merger.js"
 import { createPipelineState } from "../src/orchestration/pipeline-state.js"
 import { FavoritesStore } from "../src/engine/favorites-store.js"
@@ -130,6 +130,115 @@ describe("Proxy Endpoints", () => {
     const body = await res.json()
     expect(body.id).toBe("s-new")
     expect(getEngine(opts).createSession).toHaveBeenCalled()
+  })
+
+  it("pickDefaultBackend falls back to claude-code when opencode is unavailable", () => {
+    const registry = new BackendRegistry()
+    registry.registerProxy("claude-code", createMockProxy())
+    registry.registerEngine("claude-code", createMockEngine())
+
+    expect(pickDefaultBackend(registry)).toBe("claude-code")
+  })
+
+  it("POST /session falls back to claude-code when opencode is unavailable", async () => {
+    const tmpDir = createTmpDir()
+    const registry = new BackendRegistry()
+    const claudeProxy = createMockProxy()
+    const claudeEngine = createMockEngine()
+    registry.registerProxy("claude-code", claudeProxy)
+    registry.registerEngine("claude-code", claudeEngine)
+    const metadataStore = new SessionMetadataStore(path.join(tmpDir, "meta.json"))
+    registry.setMetadataStore(metadataStore)
+
+    const app = createApp({
+      registry,
+      metadataStore,
+      workspacePath: "/tmp",
+      eventMerger: createEventMerger(),
+      getOrchestrator: () => null,
+      getStatus: () => "ready",
+    })
+
+    const res = await app.request("/session", { method: "POST" })
+
+    expect(res.status).toBe(200)
+    expect(claudeEngine.createSession).toHaveBeenCalled()
+  })
+
+  it("POST /message creates a new claude-code session when opencode is unavailable", async () => {
+    const tmpDir = createTmpDir()
+    const registry = new BackendRegistry()
+    const claudeProxy = createMockProxy()
+    const claudeEngine = createMockEngine()
+    registry.registerProxy("claude-code", claudeProxy)
+    registry.registerEngine("claude-code", claudeEngine)
+    const metadataStore = new SessionMetadataStore(path.join(tmpDir, "meta.json"))
+    registry.setMetadataStore(metadataStore)
+
+    const app = createApp({
+      registry,
+      metadataStore,
+      workspacePath: "/tmp",
+      eventMerger: createEventMerger(),
+      getOrchestrator: () => null,
+      getStatus: () => "ready",
+    })
+
+    const res = await app.request("/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "hello", mode: "build" }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(claudeEngine.createSession).toHaveBeenCalled()
+    expect(claudeProxy.sendMessage).toHaveBeenCalled()
+  })
+
+  it("POST /skill falls back to claude-code when opencode is unavailable", async () => {
+    const tmpDir = createTmpDir()
+    const skillsDir = createTmpDir()
+    fs.mkdirSync(path.join(skillsDir, "test-skill"), { recursive: true })
+    fs.writeFileSync(
+      path.join(skillsDir, "test-skill", "SKILL.md"),
+      [
+        "---",
+        "name: test-skill",
+        "description: Test skill",
+        "stage: bugfix",
+        "---",
+        "You are a test skill.",
+      ].join("\n"),
+      "utf-8",
+    )
+
+    const registry = new BackendRegistry()
+    const claudeProxy = createMockProxy()
+    const claudeEngine = createMockEngine()
+    registry.registerProxy("claude-code", claudeProxy)
+    registry.registerEngine("claude-code", claudeEngine)
+    const metadataStore = new SessionMetadataStore(path.join(tmpDir, "meta.json"))
+    registry.setMetadataStore(metadataStore)
+
+    const app = createApp({
+      registry,
+      metadataStore,
+      workspacePath: "/tmp",
+      eventMerger: createEventMerger(),
+      getOrchestrator: () => null,
+      getStatus: () => "ready",
+      skillsDir,
+    })
+
+    const res = await app.request("/skill", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ skillName: "test-skill", content: "hello" }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(claudeEngine.createSession).toHaveBeenCalled()
+    expect(claudeProxy.sendMessage).toHaveBeenCalled()
   })
 
   it("GET /config returns proxied config from all backends", async () => {

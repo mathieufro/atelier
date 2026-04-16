@@ -82,6 +82,18 @@ class ValidationError extends Error {
   }
 }
 
+export function pickDefaultBackend(registry: BackendRegistry): BackendId {
+  const readyBackends = registry.listReadyBackends()
+  if (readyBackends.includes("opencode")) return "opencode"
+  if (readyBackends.includes("claude-code")) return "claude-code"
+
+  const allBackends = registry.listAllBackendIds()
+  if (allBackends.includes("opencode")) return "opencode"
+  if (allBackends.includes("claude-code")) return "claude-code"
+
+  throw new Error("No backend is available")
+}
+
 const VALID_MODES = new Set(["feature", "build", "plan", "bugfix"])
 const VALID_SIGNAL_TYPES = new Set(["stage_complete"])
 const VALID_VERDICTS = new Set(["done", "has_issues", "stuck", "proceed", "skip"])
@@ -164,11 +176,11 @@ export function createApp(options: AppOptions): Hono {
     app.use("*", async (c, next) => { touch(); return next() })
   }
 
-  /** Resolve which backend owns a session, defaulting to "opencode" when not yet in the metadata store. */
+  /** Resolve which backend owns a session, falling back to the default available backend when unknown. */
   function resolveSessionBackend(sessionId: string): BackendId {
     // Virtual subagent sessions are always owned by the claude-code backend
     if (sessionId.startsWith("subagent-")) return "claude-code"
-    return registry.resolveBackendForSession(sessionId) ?? "opencode"
+    return registry.resolveBackendForSession(sessionId) ?? pickDefaultBackend(registry)
   }
 
   async function getProxyForSession(sessionId: string): Promise<BackendProxy> {
@@ -271,7 +283,7 @@ export function createApp(options: AppOptions): Hono {
     let body: Record<string, unknown> = {}
     try { body = await c.req.json() as Record<string, unknown> } catch { /* no body = defaults */ }
     const model = validateModel(body.model)
-    const backendId: BackendId = model ? registry.resolveBackend(model) : "opencode"
+    const backendId: BackendId = model ? registry.resolveBackend(model) : pickDefaultBackend(registry)
     log?.debug("atelier", "session", "session_create_requested", { data: { backendId, model: model?.modelID } })
     return proxyCall(c, async () => {
       const engine = await registry.getEngine(backendId)
@@ -560,7 +572,7 @@ export function createApp(options: AppOptions): Hono {
           backendId = sessionBackend
         }
       } else {
-        backendId = model ? registry.resolveBackend(model) : "opencode"
+        backendId = model ? registry.resolveBackend(model) : pickDefaultBackend(registry)
         const engine = await registry.getEngine(backendId)
         const session = await engine.createSession({ directory: workspacePath, permission, model, variant })
         targetSessionId = session.id
@@ -935,7 +947,7 @@ export function createApp(options: AppOptions): Hono {
           backendId = sessionBackend
         }
       } else {
-        backendId = model ? registry.resolveBackend(model) : "opencode"
+        backendId = model ? registry.resolveBackend(model) : pickDefaultBackend(registry)
         const engine = await registry.getEngine(backendId)
         const session = await engine.createSession({ directory: workspacePath, permission, model, variant })
         targetSessionId = session.id

@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process"
+import * as childProcess from "node:child_process"
+import type { ChildProcess } from "node:child_process"
 import { listProcesses, isAlive, terminateProcessTree, waitForExit, type ProcessInfo } from "@atelier/core/process-platform"
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -6,6 +7,12 @@ import * as os from "node:os"
 import { fileURLToPath } from "node:url"
 import { atelierStateDir } from "@atelier/core/state-dir"
 import { writeSettings, type AtelierSettings } from "@atelier/core/settings"
+
+let spawnSyncRunner: typeof childProcess.spawnSync = childProcess.spawnSync
+
+export function setSpawnSyncRunnerForTests(fn: typeof childProcess.spawnSync | null): void {
+  spawnSyncRunner = fn ?? childProcess.spawnSync
+}
 
 function getRuntime(): string {
   try {
@@ -15,6 +22,87 @@ function getRuntime(): string {
   } catch {
     return "bun"
   }
+}
+
+function normalizePathEntry(entry: string): string {
+  return entry.trim().replace(/^"|"$/g, "")
+}
+
+function getPathKey(entry: string): string {
+  const normalized = normalizePathEntry(entry)
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized
+}
+
+function expandWindowsEnvVars(value: string, env: NodeJS.ProcessEnv): string {
+  return value.replace(/%([^%]+)%/g, (_match, name: string) => {
+    const key = Object.keys(env).find((candidate) => candidate.toLowerCase() === name.toLowerCase())
+    return key ? (env[key] ?? "") : `%${name}%`
+  })
+}
+
+function appendUniquePath(parts: string[], seen: Set<string>, entry: string): void {
+  const normalized = normalizePathEntry(entry)
+  if (!normalized) return
+  const key = getPathKey(normalized)
+  if (seen.has(key)) return
+  parts.push(normalized)
+  seen.add(key)
+}
+
+function prependUniquePath(parts: string[], seen: Set<string>, entry: string): void {
+  const normalized = normalizePathEntry(entry)
+  if (!normalized) return
+  const key = getPathKey(normalized)
+  if (seen.has(key)) return
+  parts.unshift(normalized)
+  seen.add(key)
+}
+
+function parsePathEntries(raw: string): string[] {
+  return raw
+    .split(path.delimiter)
+    .map(normalizePathEntry)
+    .filter(Boolean)
+}
+
+function getWindowsCorePathDirs(env: NodeJS.ProcessEnv): string[] {
+  const systemRoot = env.SystemRoot ?? "C:\\Windows"
+  return [
+    path.join(systemRoot, "System32"),
+    systemRoot,
+    path.join(systemRoot, "System32", "Wbem"),
+    path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0"),
+  ]
+}
+
+function readWindowsRegistryPath(key: string, env: NodeJS.ProcessEnv): string[] {
+  const regExe = path.join(env.SystemRoot ?? "C:\\Windows", "System32", "reg.exe")
+  try {
+    const result = spawnSyncRunner(regExe, ["query", key, "/v", "Path"], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 2000,
+    })
+    if (result.status !== 0 || !result.stdout) return []
+    const match = result.stdout.match(/^\s*Path\s+REG_\w+\s+(.+)$/m)
+    if (!match) return []
+    return match[1]!
+      .split(";")
+      .map((entry) => expandWindowsEnvVars(entry, env))
+      .map(normalizePathEntry)
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+function getWindowsFallbackPathDirs(env: NodeJS.ProcessEnv): string[] {
+  if (process.platform !== "win32") return []
+  return [
+    ...getWindowsCorePathDirs(env),
+    ...readWindowsRegistryPath("HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", env),
+    ...readWindowsRegistryPath("HKCU\\Environment", env),
+  ]
 }
 
 /**
@@ -44,19 +132,21 @@ function getRuntimeSearchDirs(env: NodeJS.ProcessEnv): string[] {
 }
 
 function augmentPath(env: NodeJS.ProcessEnv): void {
-  const current = env.PATH ?? ""
-  const parts = current.split(path.delimiter).filter(Boolean)
+  const parts = parsePathEntries(env.PATH ?? "")
+  const seen = new Set(parts.map(getPathKey))
+  for (const dir of getWindowsFallbackPathDirs(env)) {
+    appendUniquePath(parts, seen, dir)
+  }
   for (const dir of getRuntimeSearchDirs(env)) {
-    if (!parts.includes(dir)) parts.unshift(dir)
+    prependUniquePath(parts, seen, dir)
   }
   env.PATH = parts.join(path.delimiter)
 }
 
 /**
  * Resolve a runtime name (e.g. "bun") to an absolute path if we can find one.
- * Falls back to the bare name so Node's spawn can try PATHEXT resolution.
- * On Windows, Node's spawn without shell does not reliably walk PATHEXT for
- * extensionless names; we try common install locations first.
+ * Falls back to the bare name when resolution fails.
+ * On Windows, we search the effective PATH first, then known install locations.
  */
 export function resolveRuntime(runtime: string, env: NodeJS.ProcessEnv): string {
   if (path.isAbsolute(runtime)) return runtime
@@ -129,6 +219,10 @@ export class AtelierServerManager {
     this.log = log
   }
 
+  private spawnProcess(command: string, args: readonly string[], options: childProcess.SpawnOptions): ChildProcess {
+    return childProcess.spawn(command, args, options)
+  }
+
   async start(options: { cwd: string; signal?: AbortSignal; atelierPort?: number | null; settings?: AtelierSettings }): Promise<{ atelierUrl: string }> {
     if (this._state === "starting" || this._state === "running") {
       throw new Error("AtelierServerManager is already starting or running")
@@ -160,7 +254,6 @@ export class AtelierServerManager {
     writeSettings(stateDir, settingsToWrite)
 
     const env: NodeJS.ProcessEnv = { ...process.env }
-    augmentPath(env)
     // Strip env vars that can break child Node/Bun processes and the Claude SDK.
     //
     // VS Code-injected (NODE_OPTIONS=--inspect makes subprocesses try to open debug
@@ -203,6 +296,7 @@ export class AtelierServerManager {
 
     const runtime = getRuntime()
     const resolvedRuntime = resolveRuntime(runtime, env)
+    augmentPath(env)
     // Ensure the resolved runtime's directory is on PATH so the Claude Agent SDK
     // (and any other subprocess the server spawns) can find "bun" by bare name.
     // resolveRuntime may find bun at a deep Chocolatey path that isn't on PATH.
@@ -213,8 +307,11 @@ export class AtelierServerManager {
         env.PATH = `${runtimeDir}${path.delimiter}${env.PATH}`
       }
     }
+    if (process.platform === "win32" && !path.isAbsolute(resolvedRuntime)) {
+      throw new Error(`Unable to resolve runtime '${runtime}' to an absolute executable path`)
+    }
     this.log?.("debug", "server_spawning", `command=${resolvedRuntime} run ${serverEntry}`)
-    const proc = spawn(resolvedRuntime, ["run", serverEntry, options.cwd], {
+    const proc = this.spawnProcess(resolvedRuntime, ["run", serverEntry, options.cwd], {
       cwd: options.cwd,
       // stdin must be a real pipe (not "ignore") because on Windows the Claude Agent SDK
       // spawns claude.exe as a subprocess that inherits the server's stdio; with stdin
@@ -224,9 +321,7 @@ export class AtelierServerManager {
       env,
       detached: process.platform !== "win32",
       windowsHide: true,
-      // On Windows, shell: true lets cmd.exe resolve via PATHEXT + PATH when the
-      // runtime was not pre-resolved to an absolute path (e.g., chocolatey's bun.exe).
-      shell: process.platform === "win32" && !path.isAbsolute(resolvedRuntime),
+      shell: false,
     })
     // Close our end of stdin so the server gets EOF if it ever reads
     proc.stdin?.end()

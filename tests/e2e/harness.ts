@@ -83,7 +83,7 @@ export async function createE2EHarness(workspace: Workspace, opts?: { port?: num
   const projectRoot = join(import.meta.dirname, "../..")
 
   // Start the Atelier server as a subprocess
-  const serverProcess = spawn("bun", ["run", "server/src/index.ts", workspace.path], {
+  const serverProcess = spawn(process.execPath, ["run", "server/src/index.ts", workspace.path], {
     cwd: projectRoot,
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32",

@@ -117,7 +117,9 @@ export function parseWindowsCsvOutput(stdout: string): ProcessInfo[] {
     if (!csvMatch) continue
     const pid = parseInt(csvMatch[1]!, 10)
     const ppid = parseInt(csvMatch[2]!, 10)
-    const command = csvMatch[3]?.replace(/^"|"$/g, "") ?? ""
+    const command = (csvMatch[3] ?? "")
+      .replace(/^"|"$/g, "")
+      .replace(/""/g, '"')
     if (Number.isFinite(pid) && Number.isFinite(ppid)) {
       procs.push({ pid, ppid, command })
     }

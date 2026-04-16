@@ -3,7 +3,7 @@ import type { AgentEngine, AgentSession } from "@atelier/core/agent-engine"
 import type { createEventMerger } from "../engine/event-merger.js"
 import type { IdleDetectorStagePolicyOverride } from "./idle-detector-config.js"
 import type { BackendId, PipelineType } from "@atelier/core"
-import { realpathSync } from "node:fs"
+import { existsSync, realpathSync } from "node:fs"
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 
@@ -148,11 +148,33 @@ export function extractTopicSlug(pipelineDir: string): string {
   return withoutSuffix || dirName
 }
 
-/** Validate that a path resolves within the workspace (resolves symlinks to avoid macOS /var → /private/var mismatches). */
+/** Validate that a path resolves within the workspace, rejecting symlink/junction escapes. */
 export function validateWithinWorkspace(relativePath: string, workspacePath: string, label = "Output path"): void {
   let realWorkspace: string
   try { realWorkspace = realpathSync(workspacePath) } catch { realWorkspace = path.resolve(workspacePath) }
-  const resolved = path.resolve(realWorkspace, relativePath)
+  const absolute = path.isAbsolute(relativePath)
+    ? path.resolve(relativePath)
+    : path.resolve(realWorkspace, relativePath)
+
+  let probe = absolute
+  const missingSegments: string[] = []
+  while (!existsSync(probe)) {
+    const parent = path.dirname(probe)
+    if (parent === probe) break
+    missingSegments.unshift(path.basename(probe))
+    probe = parent
+  }
+
+  let resolved = absolute
+  try {
+    const realProbe = realpathSync(probe)
+    resolved = missingSegments.length > 0
+      ? path.join(realProbe, ...missingSegments)
+      : realProbe
+  } catch {
+    resolved = absolute
+  }
+
   if (!resolved.startsWith(realWorkspace + path.sep) && resolved !== realWorkspace) {
     throw new Error(`${label} must be within workspace`)
   }

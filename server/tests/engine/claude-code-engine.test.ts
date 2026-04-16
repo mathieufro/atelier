@@ -3,6 +3,7 @@ import { ClaudeCodeEngine } from "../../src/engine/claude-code-engine.js"
 import { SessionMetadataStore } from "../../src/engine/session-metadata-store.js"
 import type { AtelierEvent } from "@atelier/core"
 import type { DetectorNormalizedEvent } from "../../src/orchestration/idle-detector-events.js"
+import { EventEmitter } from "node:events"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -22,6 +23,15 @@ function createMockQuery(messages: unknown[]) {
   })
 }
 
+function createMockSpawnedChild() {
+  const proc = new EventEmitter() as any
+  ;(proc as any).stdout = new EventEmitter()
+  ;(proc as any).stderr = new EventEmitter()
+  ;(proc as any).kill = vi.fn()
+  ;(proc as any).pid = 4321
+  return proc
+}
+
 describe("ClaudeCodeEngine", () => {
   let engine: ClaudeCodeEngine
   let events: AtelierEvent[]
@@ -32,6 +42,11 @@ describe("ClaudeCodeEngine", () => {
     mockQueryFn = vi.fn()
     engine = new ClaudeCodeEngine({ queryFactory: mockQueryFn })
     engine.setRawEventCallback((event) => events.push(event as AtelierEvent))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it("creates a session with pending status", async () => {
@@ -100,6 +115,53 @@ describe("ClaudeCodeEngine", () => {
     expect(output.text).toBe("The answer is 42")
     expect(output.tokens.input).toBe(10)
     expect(output.tokens.output).toBe(5)
+  })
+
+  it("fetchSupportedModels uses process.execPath and parses helper JSON", async () => {
+    const child = createMockSpawnedChild()
+    const spawnSpy = vi.fn().mockReturnValue(child)
+    const helperEngine = new ClaudeCodeEngine({ queryFactory: mockQueryFn, spawnFactory: spawnSpy as any })
+
+    const promise = helperEngine.fetchSupportedModels()
+    ;(child.stdout as EventEmitter).emit("data", Buffer.from(JSON.stringify({
+      models: [{ value: "claude-sonnet", displayName: "Claude Sonnet", description: "test" }],
+    })))
+    ;(child as unknown as EventEmitter).emit("exit", 0)
+
+    await expect(promise).resolves.toEqual([
+      { value: "claude-sonnet", displayName: "Claude Sonnet", description: "test" },
+    ])
+    expect(spawnSpy).toHaveBeenCalledWith(
+      process.execPath,
+      ["run", expect.stringContaining("fetch-claude-models.ts")],
+      expect.objectContaining({ windowsHide: true, env: process.env }),
+    )
+  })
+
+  it("fetchSupportedModels rejects helper-reported errors", async () => {
+    const child = createMockSpawnedChild()
+    const helperEngine = new ClaudeCodeEngine({ queryFactory: mockQueryFn, spawnFactory: vi.fn().mockReturnValue(child) as any })
+
+    const promise = helperEngine.fetchSupportedModels()
+    const assertion = expect(promise).rejects.toThrow("helper failed")
+    ;(child.stdout as EventEmitter).emit("data", Buffer.from(JSON.stringify({ error: "helper failed" })))
+    ;(child.stderr as EventEmitter).emit("data", Buffer.from("details"))
+    ;(child as unknown as EventEmitter).emit("exit", 1)
+
+    await assertion
+  })
+
+  it("fetchSupportedModels times out and kills the helper", async () => {
+    vi.useFakeTimers()
+    const child = createMockSpawnedChild()
+    const helperEngine = new ClaudeCodeEngine({ queryFactory: mockQueryFn, spawnFactory: vi.fn().mockReturnValue(child) as any })
+
+    const promise = helperEngine.fetchSupportedModels()
+    const assertion = expect(promise).rejects.toThrow(/timed out/i)
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    await assertion
+    expect((child as any).kill).toHaveBeenCalledWith("SIGKILL")
   })
 
   it("does not emit synthetic user message.completed for normal sessions", async () => {
