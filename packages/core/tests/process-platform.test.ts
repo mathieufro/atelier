@@ -234,14 +234,14 @@ describe("parseWindowsCsvOutput", () => {
     expect(parseWindowsCsvOutput('"ProcessId","ParentProcessId","CommandLine"\n')).toEqual([])
   })
 
-  it("handles commands with commas and quotes", () => {
+  it("handles commands with commas and escaped quotes", () => {
     const stdout = [
       '"ProcessId","ParentProcessId","CommandLine"',
-      '"100","1","C:\\Program Files (x86)\\app.exe --flag=value"',
+      '"100","1","bun.exe run tool --payload ""{""ATELIER_SESSION_ID"":""abc,123""}"""',
     ].join("\n")
 
     const procs = parseWindowsCsvOutput(stdout)
     expect(procs).toHaveLength(1)
-    expect(procs[0]!.command).toBe("C:\\Program Files (x86)\\app.exe --flag=value")
+    expect(procs[0]!.command).toBe('bun.exe run tool --payload "{"ATELIER_SESSION_ID":"abc,123"}"')
   })
 })

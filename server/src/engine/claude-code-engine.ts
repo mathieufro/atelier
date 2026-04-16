@@ -1,6 +1,8 @@
 import crypto from "node:crypto"
+import * as childProcess from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { fileURLToPath } from "node:url"
 import { listProcesses, terminateProcessTree } from "@atelier/core/process-platform"
 import type { AgentEngine, SessionConfig, MessageInput, AgentSession, SessionOutput } from "@atelier/core/agent-engine"
 import type { Logger, AtelierEvent } from "@atelier/core"
@@ -93,6 +95,8 @@ interface ClaudeCodeEngineOptions {
   forkSessionFactory?: (sessionId: string, options?: { dir?: string; upToMessageId?: string; title?: string }) => Promise<{ sessionId: string }>
   /** Optional logger for debugging */
   logger?: Logger
+  /** Injected child-process spawn for testing helper subprocesses */
+  spawnFactory?: typeof childProcess.spawn
 }
 
 export interface EngineSessionState {
@@ -114,6 +118,7 @@ export class ClaudeCodeEngine implements AgentEngine {
   private metadataStore?: import("./session-metadata-store.js").SessionMetadataStore
   private transcriptDir?: string
   private log?: Logger
+  private spawnFactory: typeof childProcess.spawn
 
   // Callbacks (same pattern as OpenCodeEngine)
   private messageCallback: ((sessionId: string, messageId: string, role: string) => void) | null = null
@@ -134,6 +139,7 @@ export class ClaudeCodeEngine implements AgentEngine {
     this.metadataStore = options?.metadataStore
     this.transcriptDir = options?.transcriptDir
     this.log = options?.logger?.child({ source: "claude-code-engine" })
+    this.spawnFactory = options?.spawnFactory ?? childProcess.spawn
   }
 
   setMessageCallback(cb: (sessionId: string, messageId: string, role: string) => void): void { this.messageCallback = cb }
@@ -1211,16 +1217,13 @@ export class ClaudeCodeEngine implements AgentEngine {
     // hangs — see https://github.com/anthropics/claude-agent-sdk-python/issues/208
     // Workaround: run the SDK call in a fresh top-level Bun subprocess that we
     // spawn here. The SDK works correctly when its host is a top-level process.
-    const { spawn } = await import("node:child_process")
-    const path = await import("node:path")
-    const url = await import("node:url")
-    const helperPath = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), "fetch-claude-models.ts")
+    const helperPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "fetch-claude-models.ts")
 
     const t0 = Date.now()
     this.log?.info("atelier", "session", "fetchSupportedModels_start", { data: { helperPath } })
 
     return await new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, ["run", helperPath], {
+      const child = this.spawnFactory(process.execPath, ["run", helperPath], {
         cwd: path.dirname(helperPath),
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,

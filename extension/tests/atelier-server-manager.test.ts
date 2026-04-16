@@ -1,10 +1,27 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
-import { parseOrphanOpencodePids, parseOrphanClaudeSdkPids, AtelierServerManager, resolveRuntime } from "../src/atelier-server-manager"
+import { parseOrphanOpencodePids, parseOrphanClaudeSdkPids, AtelierServerManager, resolveRuntime, setSpawnSyncRunnerForTests } from "../src/atelier-server-manager"
 import { type ProcessInfo } from "@atelier/core/process-platform"
+import { atelierStateDir } from "@atelier/core/state-dir"
 import * as processPlatform from "@atelier/core/process-platform"
+import * as childProcess from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { EventEmitter } from "node:events"
+
+function createMockChild(pid = 12345): childProcess.ChildProcess {
+  const proc = new EventEmitter() as childProcess.ChildProcess
+  ;(proc as any).pid = pid
+  ;(proc as any).exitCode = null
+  ;(proc as any).stdin = { end: vi.fn() }
+  ;(proc as any).stdout = new EventEmitter()
+  ;(proc as any).stderr = new EventEmitter()
+  return proc
+}
+
+function normalizeWindowsPathEntries(entries: string[]): string[] {
+  return entries.map((entry) => entry.toLowerCase())
+}
 
 describe("parseOrphanOpencodePids", () => {
   const originalPlatform = process.platform
@@ -236,5 +253,148 @@ describe("resolveRuntime", () => {
     } finally {
       fs.rmSync(fakeHome, { recursive: true, force: true })
     }
+  })
+})
+
+describe("AtelierServerManager.start()", () => {
+  const originalPlatform = process.platform
+  const originalPath = process.env.PATH
+  const originalBunInstall = process.env.BUN_INSTALL
+  let workspaceDir: string
+  let pathDir: string
+  let fallbackRoot: string
+  let manager: AtelierServerManager
+
+  beforeEach(() => {
+    workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "atelier-workspace-"))
+    pathDir = fs.mkdtempSync(path.join(os.tmpdir(), "atelier-path-"))
+    fallbackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "atelier-fallback-"))
+    manager = new AtelierServerManager()
+  })
+
+  afterEach(() => {
+    Object.defineProperty(process, "platform", { value: originalPlatform })
+    process.env.PATH = originalPath
+    if (originalBunInstall === undefined) delete process.env.BUN_INSTALL
+    else process.env.BUN_INSTALL = originalBunInstall
+    setSpawnSyncRunnerForTests(null)
+    try { fs.rmSync(workspaceDir, { recursive: true, force: true }) } catch {}
+    try { fs.rmSync(pathDir, { recursive: true, force: true }) } catch {}
+    try { fs.rmSync(fallbackRoot, { recursive: true, force: true }) } catch {}
+    try { fs.rmSync(atelierStateDir(workspaceDir), { recursive: true, force: true }) } catch {}
+    vi.restoreAllMocks()
+  })
+
+  it("prefers the original PATH runtime over guessed directories during start on Windows", async () => {
+    Object.defineProperty(process, "platform", { value: "win32" })
+
+    const pathBun = path.join(pathDir, "bun.EXE")
+    const fallbackBun = path.join(fallbackRoot, "bin", "bun.EXE")
+    fs.writeFileSync(pathBun, "")
+    fs.mkdirSync(path.dirname(fallbackBun), { recursive: true })
+    fs.writeFileSync(fallbackBun, "")
+
+    process.env.PATH = pathDir
+    process.env.BUN_INSTALL = fallbackRoot
+
+    vi.spyOn(manager as any, "killOrphanProcesses").mockResolvedValue(undefined)
+    vi.spyOn(manager as any, "killStaleProcess").mockResolvedValue(undefined)
+    vi.spyOn(manager as any, "waitForPidFile").mockResolvedValue("http://127.0.0.1:7777")
+    vi.spyOn(manager as any, "pollHealth").mockResolvedValue(undefined)
+
+    const child = createMockChild()
+    const spawnSpy = vi.spyOn(manager as any, "spawnProcess").mockReturnValue(child)
+
+    await manager.start({ cwd: workspaceDir })
+
+    expect(spawnSpy).toHaveBeenCalled()
+    expect(spawnSpy.mock.calls[0]![0]).toBe(pathBun)
+    expect(spawnSpy.mock.calls[0]![2]).toMatchObject({
+      cwd: workspaceDir,
+      shell: false,
+      windowsHide: true,
+    })
+  })
+
+  it("merges missing Windows registry PATH entries into the spawned server env", async () => {
+    Object.defineProperty(process, "platform", { value: "win32" })
+
+    const pathBun = path.join(pathDir, "bun.EXE")
+    fs.writeFileSync(pathBun, "")
+    process.env.PATH = pathDir
+
+    const machineDir = "C:\\Program Files\\CMake\\bin"
+    const userDir = "C:\\Users\\Etienne\\AppData\\Local\\Programs\\Microsoft VS Code\\bin"
+
+    const regSpy = vi.fn().mockImplementation((command, args) => {
+      const key = args?.[1]
+      if (String(command).toLowerCase().endsWith("reg.exe") && key === "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment") {
+        return {
+          status: 0,
+          stdout: `\r\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\r\n    Path    REG_EXPAND_SZ    ${machineDir};%SystemRoot%\\System32\r\n`,
+          stderr: "",
+        } as childProcess.SpawnSyncReturns<string>
+      }
+      if (String(command).toLowerCase().endsWith("reg.exe") && key === "HKCU\\Environment") {
+        return {
+          status: 0,
+          stdout: `\r\nHKEY_CURRENT_USER\\Environment\r\n    Path    REG_EXPAND_SZ    ${userDir}\r\n`,
+          stderr: "",
+        } as childProcess.SpawnSyncReturns<string>
+      }
+      throw new Error(`Unexpected spawnSync call: ${String(command)} ${args?.join(" ") ?? ""}`)
+    })
+    setSpawnSyncRunnerForTests(regSpy as any)
+
+    vi.spyOn(manager as any, "killOrphanProcesses").mockResolvedValue(undefined)
+    vi.spyOn(manager as any, "killStaleProcess").mockResolvedValue(undefined)
+    vi.spyOn(manager as any, "waitForPidFile").mockResolvedValue("http://127.0.0.1:7777")
+    vi.spyOn(manager as any, "pollHealth").mockResolvedValue(undefined)
+
+    const child = createMockChild()
+    const spawnSpy = vi.spyOn(manager as any, "spawnProcess").mockReturnValue(child)
+
+    await manager.start({ cwd: workspaceDir })
+
+    expect(regSpy).toHaveBeenCalledTimes(2)
+    const spawnedEnv = spawnSpy.mock.calls[0]![2].env as NodeJS.ProcessEnv
+    const pathEntries = normalizeWindowsPathEntries((spawnedEnv.PATH ?? "").split(path.delimiter))
+    expect(pathEntries).toContain(machineDir.toLowerCase())
+    expect(pathEntries).toContain(userDir.toLowerCase())
+    expect(pathEntries).toContain(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32").toLowerCase())
+  })
+
+  it("adds core Windows system directories even when registry lookup fails", async () => {
+    Object.defineProperty(process, "platform", { value: "win32" })
+
+    const pathBun = path.join(pathDir, "bun.EXE")
+    fs.writeFileSync(pathBun, "")
+    process.env.PATH = pathDir
+
+    const regSpy = vi.fn().mockReturnValue({
+      status: 1,
+      stdout: "",
+      stderr: "missing",
+    } as childProcess.SpawnSyncReturns<string>)
+    setSpawnSyncRunnerForTests(regSpy as any)
+
+    vi.spyOn(manager as any, "killOrphanProcesses").mockResolvedValue(undefined)
+    vi.spyOn(manager as any, "killStaleProcess").mockResolvedValue(undefined)
+    vi.spyOn(manager as any, "waitForPidFile").mockResolvedValue("http://127.0.0.1:7777")
+    vi.spyOn(manager as any, "pollHealth").mockResolvedValue(undefined)
+
+    const child = createMockChild()
+    const spawnSpy = vi.spyOn(manager as any, "spawnProcess").mockReturnValue(child)
+
+    await manager.start({ cwd: workspaceDir })
+
+    expect(regSpy).toHaveBeenCalledTimes(2)
+    const spawnedEnv = spawnSpy.mock.calls[0]![2].env as NodeJS.ProcessEnv
+    const pathEntries = normalizeWindowsPathEntries((spawnedEnv.PATH ?? "").split(path.delimiter))
+    const systemRoot = process.env.SystemRoot ?? "C:\\Windows"
+    expect(pathEntries).toContain(path.join(systemRoot, "System32").toLowerCase())
+    expect(pathEntries).toContain(systemRoot.toLowerCase())
+    expect(pathEntries).toContain(path.join(systemRoot, "System32", "Wbem").toLowerCase())
+    expect(pathEntries).toContain(path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0").toLowerCase())
   })
 })
