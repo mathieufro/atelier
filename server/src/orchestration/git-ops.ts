@@ -311,13 +311,17 @@ export async function listWorktrees(repoPath: string): Promise<WorktreeEntry[]> 
     if (!line) continue
     if (line.startsWith("worktree ")) {
       if (current.path) entries.push(current as WorktreeEntry)
-      // Git outputs paths with forward slashes even on Windows; normalize to native separators
-      // so equality checks against fs.realpathSync output work cross-platform.
-      // Also resolve symlinks: git's porcelain output and Node's path.resolve can disagree
-      // on Linux when TMPDIR contains symlinked components (e.g. some GitHub Actions runners).
+      // Canonicalize the worktree path so callers can reliably compare it against
+      // paths they've resolved via the filesystem. Two cross-platform quirks to handle:
+      //   - On Windows, git expands 8.3 short names (e.g. RUNNER~1 -> runneradmin),
+      //     but Node's JS `realpathSync` does not. Use `realpathSync.native` which
+      //     calls the OS API and performs the same expansion as git.
+      //   - On Linux, TMPDIR may contain symlinked components (e.g. some GitHub
+      //     Actions runners); realpathSync resolves them.
+      // `path.resolve` also handles the forward-slash output git emits on Windows.
       const resolved = path.resolve(line.slice("worktree ".length))
       let canonical = resolved
-      try { canonical = fs.realpathSync(resolved) } catch {}
+      try { canonical = fs.realpathSync.native(resolved) } catch {}
       current = { path: canonical }
     } else if (line.startsWith("HEAD ")) {
       current.head = line.slice("HEAD ".length)

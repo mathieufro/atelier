@@ -138,12 +138,12 @@ describe("git-ops: worktree operations", () => {
 
     const list = await listWorktrees(tmpDir)
     expect(list.length).toBeGreaterThanOrEqual(3)
-    const { realpathSync } = await import('node:fs')
-    const realWt1 = realpathSync(wt1)
-    const realWt2 = realpathSync(wt2)
-    const paths = list.map(w => w.path)
-    expect(paths, `list=${JSON.stringify(list)} tmpDir=${tmpDir} realTmpDir=${realpathSync(tmpDir)}`).toContain(realWt1)
-    expect(paths).toContain(realWt2)
+    // Use realpathSync.native so Windows 8.3 short names in TMPDIR (e.g. RUNNER~1)
+    // are expanded to their long form, matching what listWorktrees produces.
+    const realWt1 = fs.realpathSync.native(wt1)
+    const realWt2 = fs.realpathSync.native(wt2)
+    expect(list.some(w => w.path === realWt1)).toBe(true)
+    expect(list.some(w => w.path === realWt2)).toBe(true)
     expect(list.some(w => w.branch === "atelier/wt1")).toBe(true)
   })
 
