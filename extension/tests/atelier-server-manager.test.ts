@@ -329,7 +329,7 @@ describe("AtelierServerManager.start()", () => {
     })
   })
 
-  it("merges missing Windows registry PATH entries into the spawned server env", async () => {
+  it.skipIf(process.platform !== "win32")("merges missing Windows registry PATH entries into the spawned server env", async () => {
     Object.defineProperty(process, "platform", { value: "win32" })
 
     const pathBun = path.join(pathDir, "bun.EXE")
@@ -377,7 +377,7 @@ describe("AtelierServerManager.start()", () => {
     expect(pathEntries).toContain(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32").toLowerCase())
   })
 
-  it("adds core Windows system directories even when registry lookup fails", async () => {
+  it.skipIf(process.platform !== "win32")("adds core Windows system directories even when registry lookup fails", async () => {
     Object.defineProperty(process, "platform", { value: "win32" })
 
     const pathBun = path.join(pathDir, "bun.EXE")
