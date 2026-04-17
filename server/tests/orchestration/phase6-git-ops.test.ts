@@ -141,8 +141,9 @@ describe("git-ops: worktree operations", () => {
     const { realpathSync } = await import('node:fs')
     const realWt1 = realpathSync(wt1)
     const realWt2 = realpathSync(wt2)
-    expect(list.some(w => w.path === realWt1)).toBe(true)
-    expect(list.some(w => w.path === realWt2)).toBe(true)
+    const paths = list.map(w => w.path)
+    expect(paths, `list=${JSON.stringify(list)} tmpDir=${tmpDir} realTmpDir=${realpathSync(tmpDir)}`).toContain(realWt1)
+    expect(paths).toContain(realWt2)
     expect(list.some(w => w.branch === "atelier/wt1")).toBe(true)
   })
 
