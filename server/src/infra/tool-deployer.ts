@@ -1,10 +1,12 @@
 import * as fs from "node:fs/promises"
+import { existsSync } from "node:fs"
 import * as path from "node:path"
 import { execFile as execFileCb } from "node:child_process"
 import { promisify } from "node:util"
 import { createHash } from "node:crypto"
 
 const execFile = promisify(execFileCb)
+const INSTALL_TIMEOUT_MS = 60_000
 
 export const TOOL_SOURCE = `import { tool } from "@opencode-ai/plugin"
 
@@ -49,12 +51,16 @@ export async function deployCallbackTool(targetDir: string): Promise<void> {
   const toolDir = path.join(targetDir, "tools")
   await fs.mkdir(toolDir, { recursive: true })
 
-  // Content hash check: only write + install if the tool source has changed
+  // Skip only if BOTH the tool source is current AND deps are actually installed.
+  // Checking node_modules prevents a permanent-broken state when a prior bun install
+  // failed (e.g. cold-cache timeout): the .ts hash would match on every restart and
+  // the install would never be retried.
   const toolPath = path.join(toolDir, "atelier_signal.ts")
   const newHash = createHash("sha256").update(TOOL_SOURCE).digest("hex")
+  const depsInstalled = existsSync(path.join(toolDir, "node_modules", "@opencode-ai", "plugin"))
   try {
     const existing = await fs.readFile(toolPath, "utf-8")
-    if (createHash("sha256").update(existing).digest("hex") === newHash) return
+    if (createHash("sha256").update(existing).digest("hex") === newHash && depsInstalled) return
   } catch { /* file doesn't exist yet */ }
 
   await fs.writeFile(toolPath, TOOL_SOURCE, "utf-8")
@@ -86,11 +92,12 @@ export async function deployCallbackTool(targetDir: string): Promise<void> {
       await fs.rm(path.join(toolDir, "node_modules"), { recursive: true, force: true })
       await fs.rm(path.join(toolDir, "bun.lock"), { force: true })
     }
-    await execFile("bun", ["install", "--frozen-lockfile"], { cwd: toolDir, timeout: 15_000 }).catch(() =>
-      execFile("bun", ["install"], { cwd: toolDir, timeout: 15_000 })
+    await execFile("bun", ["install", "--frozen-lockfile"], { cwd: toolDir, timeout: INSTALL_TIMEOUT_MS }).catch(() =>
+      execFile("bun", ["install"], { cwd: toolDir, timeout: INSTALL_TIMEOUT_MS })
     )
   } catch {
-    // Non-fatal — OpenCode will retry dependency resolution on its own
+    // Non-fatal: a subsequent deploy call will retry (hash check now also verifies
+    // node_modules presence, so a failed install won't be masked by a matching hash).
   }
 }
 
@@ -155,9 +162,10 @@ export async function deployMcpSignalTool(targetDir: string): Promise<void> {
 
   const toolPath = path.join(mcpDir, "atelier_signal_mcp.ts")
   const newHash = createHash("sha256").update(MCP_SIGNAL_TOOL_SOURCE).digest("hex")
+  const depsInstalled = existsSync(path.join(mcpDir, "node_modules", "@modelcontextprotocol", "sdk"))
   try {
     const existing = await fs.readFile(toolPath, "utf-8")
-    if (createHash("sha256").update(existing).digest("hex") === newHash) return
+    if (createHash("sha256").update(existing).digest("hex") === newHash && depsInstalled) return
   } catch { /* file doesn't exist yet */ }
 
   await fs.writeFile(toolPath, MCP_SIGNAL_TOOL_SOURCE, "utf-8")
@@ -176,11 +184,11 @@ export async function deployMcpSignalTool(targetDir: string): Promise<void> {
   await fs.writeFile(pkgPath, JSON.stringify(pkg), "utf-8")
 
   try {
-    await execFile("bun", ["install", "--frozen-lockfile"], { cwd: mcpDir, timeout: 15_000 }).catch(() =>
-      execFile("bun", ["install"], { cwd: mcpDir, timeout: 15_000 })
+    await execFile("bun", ["install", "--frozen-lockfile"], { cwd: mcpDir, timeout: INSTALL_TIMEOUT_MS }).catch(() =>
+      execFile("bun", ["install"], { cwd: mcpDir, timeout: INSTALL_TIMEOUT_MS })
     )
   } catch {
-    // Non-fatal
+    // Non-fatal: next deploy retries (hash check also verifies node_modules presence).
   }
 }
 
@@ -280,9 +288,10 @@ export async function deployResponderMcp(targetDir: string): Promise<void> {
 
   const toolPath = path.join(mcpDir, "atelier_responder_mcp.ts")
   const newHash = createHash("sha256").update(MCP_RESPONDER_SOURCE).digest("hex")
+  const depsInstalled = existsSync(path.join(mcpDir, "node_modules", "@modelcontextprotocol", "sdk"))
   try {
     const existing = await fs.readFile(toolPath, "utf-8")
-    if (createHash("sha256").update(existing).digest("hex") === newHash) return
+    if (createHash("sha256").update(existing).digest("hex") === newHash && depsInstalled) return
   } catch { /* file doesn't exist yet */ }
 
   await fs.writeFile(toolPath, MCP_RESPONDER_SOURCE, "utf-8")
@@ -302,10 +311,10 @@ export async function deployResponderMcp(targetDir: string): Promise<void> {
   await fs.writeFile(pkgPath, JSON.stringify(pkg), "utf-8")
 
   try {
-    await execFile("bun", ["install", "--frozen-lockfile"], { cwd: mcpDir, timeout: 15_000 }).catch(() =>
-      execFile("bun", ["install"], { cwd: mcpDir, timeout: 15_000 })
+    await execFile("bun", ["install", "--frozen-lockfile"], { cwd: mcpDir, timeout: INSTALL_TIMEOUT_MS }).catch(() =>
+      execFile("bun", ["install"], { cwd: mcpDir, timeout: INSTALL_TIMEOUT_MS })
     )
   } catch {
-    // Non-fatal
+    // Non-fatal: next deploy retries (hash check also verifies node_modules presence).
   }
 }

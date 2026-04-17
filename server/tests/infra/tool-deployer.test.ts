@@ -52,6 +52,19 @@ describe("deployCallbackTool", { timeout: 30_000 }, () => {
     expect(TOOL_SOURCE).not.toContain("stage_blocked")
     expect(TOOL_SOURCE).toContain("/pipeline/signal")
   })
+
+  it("re-runs bun install when node_modules is missing even if source hash matches", async () => {
+    await deployCallbackTool(tempDir)
+    const nodeModulesPath = path.join(tempDir, "tools", "node_modules")
+    expect(fs.existsSync(nodeModulesPath)).toBe(true)
+
+    // Simulate a prior failed install: .ts exists with matching hash, but deps are gone.
+    fs.rmSync(nodeModulesPath, { recursive: true, force: true })
+    expect(fs.existsSync(nodeModulesPath)).toBe(false)
+
+    await deployCallbackTool(tempDir)
+    expect(fs.existsSync(path.join(nodeModulesPath, "@opencode-ai", "plugin"))).toBe(true)
+  })
 })
 
 // bun install inside deployMcpSignalTool can take time on cold cache
@@ -108,5 +121,18 @@ describe("deployMcpSignalTool", { timeout: 30_000 }, () => {
     expect(MCP_SIGNAL_TOOL_SOURCE).toContain("ATELIER_SESSION_ID")
     // Must not reference @opencode-ai/plugin
     expect(MCP_SIGNAL_TOOL_SOURCE).not.toContain("@opencode-ai/plugin")
+  })
+
+  it("re-runs bun install when node_modules is missing even if source hash matches", async () => {
+    await deployMcpSignalTool(tempDir)
+    const nodeModulesPath = path.join(tempDir, "tools", "mcp", "node_modules")
+    expect(fs.existsSync(nodeModulesPath)).toBe(true)
+
+    // Simulate a prior failed install: .ts exists with matching hash, but deps are gone.
+    fs.rmSync(nodeModulesPath, { recursive: true, force: true })
+    expect(fs.existsSync(nodeModulesPath)).toBe(false)
+
+    await deployMcpSignalTool(tempDir)
+    expect(fs.existsSync(path.join(nodeModulesPath, "@modelcontextprotocol", "sdk"))).toBe(true)
   })
 })
