@@ -298,8 +298,11 @@ export class AtelierServerManager {
     }
 
     const runtime = getRuntime()
-    const resolvedRuntime = resolveRuntime(runtime, env)
+    let resolvedRuntime = resolveRuntime(runtime, env)
     augmentPath(env)
+    if (process.platform === "win32" && !path.isAbsolute(resolvedRuntime)) {
+      resolvedRuntime = resolveRuntime(runtime, env)
+    }
     // Ensure the resolved runtime's directory is on PATH so the Claude Agent SDK
     // (and any other subprocess the server spawns) can find "bun" by bare name.
     // resolveRuntime may find bun at a deep Chocolatey path that isn't on PATH.

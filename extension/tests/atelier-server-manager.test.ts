@@ -329,6 +329,53 @@ describe("AtelierServerManager.start()", () => {
     })
   })
 
+  it("resolves the Windows runtime after merging registry PATH entries", async () => {
+    Object.defineProperty(process, "platform", { value: "win32" })
+
+    const registryDir = fs.mkdtempSync(path.join(os.tmpdir(), "atelier-registry-path-"))
+    const registryBun = path.join(registryDir, "bun.EXE")
+    fs.writeFileSync(registryBun, "")
+    process.env.PATH = ""
+    delete process.env.BUN_INSTALL
+
+    const regSpy = vi.fn().mockImplementation((command, args) => {
+      const key = args?.[1]
+      if (String(command).toLowerCase().endsWith("reg.exe") && key === "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment") {
+        return {
+          status: 0,
+          stdout: `\r\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\r\n    Path    REG_EXPAND_SZ    ${registryDir}\r\n`,
+          stderr: "",
+        } as childProcess.SpawnSyncReturns<string>
+      }
+      if (String(command).toLowerCase().endsWith("reg.exe") && key === "HKCU\\Environment") {
+        return {
+          status: 1,
+          stdout: "",
+          stderr: "missing",
+        } as childProcess.SpawnSyncReturns<string>
+      }
+      throw new Error(`Unexpected spawnSync call: ${String(command)} ${args?.join(" ") ?? ""}`)
+    })
+    setSpawnSyncRunnerForTests(regSpy as any)
+
+    vi.spyOn(manager as any, "killOrphanProcesses").mockResolvedValue(undefined)
+    vi.spyOn(manager as any, "killStaleProcess").mockResolvedValue(undefined)
+    vi.spyOn(manager as any, "waitForPidFile").mockResolvedValue("http://127.0.0.1:7777")
+    vi.spyOn(manager as any, "pollHealth").mockResolvedValue(undefined)
+
+    const child = createMockChild()
+    const spawnSpy = vi.spyOn(manager as any, "spawnProcess").mockReturnValue(child)
+
+    try {
+      await manager.start({ cwd: workspaceDir })
+    } finally {
+      fs.rmSync(registryDir, { recursive: true, force: true })
+    }
+
+    expect(spawnSpy).toHaveBeenCalled()
+    expect(spawnSpy.mock.calls[0]![0]).toBe(registryBun)
+  })
+
   it.skipIf(process.platform !== "win32")("merges missing Windows registry PATH entries into the spawned server env", async () => {
     Object.defineProperty(process, "platform", { value: "win32" })
 
