@@ -316,13 +316,16 @@ export class OpenCodeEngine implements AgentEngine {
       }
     }
 
-    await this.client.session.prompt({
+    const res = await this.client.session.prompt({
       sessionID: sessionId,
       parts: parts as Parameters<typeof this.client.session.prompt>[0]["parts"],
       system,
       model: message.model,
       variant: message.variant,
     })
+    if ((res as { error?: unknown } | undefined)?.error) {
+      throw new Error(`Failed to prompt opencode session ${sessionId}: ${JSON.stringify((res as { error?: unknown }).error)}`)
+    }
   }
 
   waitForIdle(sessionId: string, timeoutMs = 60_000): Promise<void> {

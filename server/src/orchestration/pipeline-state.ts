@@ -89,6 +89,7 @@ export interface PipelineState {
   setStageStuck(pipelineId: string, stageId: string): void
   setStageStatus(pipelineId: string, stageId: string, status: StageStatus): void
   setStageInterrupted(pipelineId: string, stageId: string, interrupted: boolean): void
+  setStageSessionId(pipelineId: string, stageId: string, sessionId: string): void
   setPipelineStatus(pipelineId: string, status: PipelineStateData["status"]): void
   incrementStepCounter(pipelineId: string): number
 
@@ -420,6 +421,13 @@ export function createPipelineState(workspacePath: string, logger?: Logger): Pip
     save(data)
   }
 
+  function setStageSessionId(pipelineId: string, stageId: string, sessionId: string) {
+    const data = requirePipeline(pipelineId)
+    const stage = requireStage(data, stageId)
+    stage.sessionId = sessionId
+    save(data)
+  }
+
   function setPipelineStatus(pipelineId: string, status: PipelineStateData["status"]) {
     const data = requirePipeline(pipelineId)
     data.status = status
@@ -614,6 +622,7 @@ export function createPipelineState(workspacePath: string, logger?: Logger): Pip
     setStageStuck,
     setStageStatus,
     setStageInterrupted,
+    setStageSessionId,
     setPipelineStatus,
     incrementStepCounter,
     updatePipelineStage,

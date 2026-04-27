@@ -117,6 +117,12 @@ describe("OpenCodeEngine behavioral tests", () => {
         system: "You are a helpful assistant",
       })
     })
+
+    it("throws SDK error responses so missing sessions can be recovered by callers", async () => {
+      mockClient.session.prompt.mockResolvedValueOnce({ error: { message: "Session sess-1 not found" } })
+
+      await expect(engine.sendMessage("sess-1", { content: "hello" })).rejects.toThrow(/Session sess-1 not found/)
+    })
   })
 
   // 3. getSessionOutput

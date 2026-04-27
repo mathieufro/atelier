@@ -13,8 +13,11 @@ import {
   validateWithinWorkspace,
   findSignalableStage,
   extractTopicSlug,
+  createInternalSession,
+  STAGE_TITLES,
 } from "./helpers.js"
 import { getTopology, getNextStage, CODE_PRODUCING_STAGES, type StageDefinition } from "./topology.js"
+import { SIGNAL_FOOTER } from "./skill-loader.js"
 import * as gitOps from "./git-ops.js"
 import { readSettings } from "@atelier/core/settings"
 import { atelierStateDir } from "@atelier/core/state-dir"
@@ -1167,38 +1170,139 @@ export class Orchestrator {
       this.em.emit({ type: "stage_resumed", pipelineId: active.id, stageId, sessionId })
    }
 
-   /** Clear interrupt and route a message to the stage session.
-    *  If model/variant are provided, update the pipeline's stored model so
-    *  subsequent stages also use the new selection. */
-   async clearInterruptAndRoute(sessionId: string, content: string, opts?: { model?: { providerID: string; modelID: string }; variant?: string }): Promise<void> {
-     const active = this.findPipelineBySession(sessionId)
-     if (!active) return
-     const stageId = active.sessionMap.get(sessionId)
-     if (!stageId) return
+  /** Clear interrupt and route a message to the stage session.
+   *  If model/variant are provided, update the pipeline's stored model so
+   *  subsequent stages also use the new selection. */
+  async clearInterruptAndRoute(sessionId: string, content: string, opts?: { model?: { providerID: string; modelID: string }; variant?: string }): Promise<void> {
+    const active = this.findPipelineBySession(sessionId)
+    if (!active) return
+    const stageId = active.sessionMap.get(sessionId)
+    if (!stageId) return
 
-     // Apply model/variant override if provided
-     if (opts?.model) {
-       active.model = opts.model
-       active.variant = opts.variant
-       this.ps.updatePipelineModel(active.id, opts.model, opts.variant ?? null)
-     } else if (opts?.variant !== undefined) {
-       active.variant = opts.variant
-       this.ps.updatePipelineModel(active.id, active.model ?? null, opts.variant ?? null)
-     }
+    // Apply model/variant override if provided
+    if (opts?.model) {
+      active.model = opts.model
+      active.variant = opts.variant
+      this.ps.updatePipelineModel(active.id, opts.model, opts.variant ?? null)
+    } else if (opts?.variant !== undefined) {
+      active.variant = opts.variant
+      this.ps.updatePipelineModel(active.id, active.model ?? null, opts.variant ?? null)
+    }
 
-      // Clear interrupted flag
-      this.setInterrupted(active.id, stageId, false)
-      this.monitor.resetSession(sessionId)
-      this.em.emit({ type: "stage_resumed", pipelineId: active.id, stageId, sessionId })
-     this.logger.debug("atelier", "message", "message_routed", { pipelineId: active.id, stageId, sessionId, data: { contentLength: content.length } })
+    const stage = this.ps.getPipeline(active.id)?.stages.find(s => s.id === stageId) ?? null
+    let targetSessionId = sessionId
+    let messageContent = content
+    let engine = await this.resolveEngineForSession(sessionId)
 
-     const engine = await this.resolveEngineForSession(sessionId)
-     await engine.sendMessage(sessionId, {
-       content,
-       model: active.model,
-       variant: active.variant,
-     })
-   }
+    try {
+      await engine.sendMessage(targetSessionId, {
+        content: messageContent,
+        model: active.model,
+        variant: active.variant,
+      })
+    } catch (err) {
+      const replacementId = await this.repairMissingOpenCodeStageRoute(active, stageId, sessionId, err)
+      if (!replacementId) throw err
+
+      targetSessionId = replacementId
+      engine = await this.resolveEngineForSession(targetSessionId)
+      messageContent = this.buildRecoveredStageMessage(active, stage, content)
+      await engine.sendMessage(targetSessionId, {
+        content: messageContent,
+        model: active.model,
+        variant: active.variant,
+      })
+    }
+
+    // Clear interrupted flag only after OpenCode accepts the resume message.
+    this.setInterrupted(active.id, stageId, false)
+    this.monitor.resetSession(targetSessionId)
+    this.em.emit({ type: "stage_resumed", pipelineId: active.id, stageId, sessionId: targetSessionId })
+    this.logger.debug("atelier", "message", "message_routed", { pipelineId: active.id, stageId, sessionId: targetSessionId, data: { contentLength: messageContent.length } })
+  }
+
+  private isSessionNotFoundError(err: unknown): boolean {
+    const text = err instanceof Error ? `${err.name} ${err.message}` : String(err)
+    const lower = text.toLowerCase()
+    return lower.includes("session") && lower.includes("not found")
+  }
+
+  private async repairMissingOpenCodeStageRoute(
+    active: ActivePipeline,
+    stageId: string,
+    oldSessionId: string,
+    err: unknown,
+  ): Promise<string | null> {
+    if (active.backendId !== "opencode" || !this.isSessionNotFoundError(err)) return null
+
+    const pipeline = this.ps.getPipeline(active.id)
+    const stage = pipeline?.stages.find(s => s.id === stageId)
+    if (!stage) return null
+
+    const engine = await this.resolveEngine("opencode")
+    const session = await createInternalSession(engine, active.workspacePath, this.em, {
+      parentID: active.id,
+      model: active.model,
+      variant: active.variant,
+      title: STAGE_TITLES[stage.stage] ?? stage.stage,
+    })
+
+    active.sessionMap.delete(oldSessionId)
+    active.sessionMap.set(session.id, stageId)
+    active.stageSessionMap.set(stage.stage, session.id)
+    this.sessionIndex.delete(oldSessionId)
+    this.sessionIndex.set(session.id, active.id)
+    this.ps.setStageSessionId(active.id, stageId, session.id)
+    this.monitor.markSessionTerminal(oldSessionId)
+
+    const topologyDef = getTopology(active.pipelineType).find(item => item.stage === stage.stage)
+    this.monitor.registerPipelineSession({
+      pipelineId: active.id,
+      stageId,
+      stage: stage.stage,
+      stageMode: topologyDef?.mode ?? "autonomous",
+      sessionId: session.id,
+      assignedOutputPath: stage.assignedOutputPath ?? undefined,
+      pipelineConfig: active.detectorConfig,
+      stageOverride: topologyDef?.detectorOverride,
+    })
+
+    this.logger.warn("atelier", "session", "opencode_stage_session_route_repaired", {
+      pipelineId: active.id,
+      stageId,
+      sessionId: oldSessionId,
+      data: { newSessionId: session.id, stage: stage.stage },
+    })
+    this.em.emit({
+      type: "stage_started",
+      pipelineId: active.id,
+      stageId,
+      stage: stage.stage,
+      sessionId: session.id,
+      model: active.model,
+      variant: active.variant,
+    } as Record<string, unknown>)
+
+    return session.id
+  }
+
+  private buildRecoveredStageMessage(active: ActivePipeline, stage: StageData | null, content: string): string {
+    const pipeline = this.ps.getPipeline(active.id)
+    const parts = [
+      "Atelier repaired the message route for this pipeline stage because the previous OpenCode route no longer accepted messages.",
+      "Continue the existing pipeline stage using the workspace files and pipeline artifacts as source of truth. Do not restart from scratch unless the user explicitly asks.",
+      `Pipeline ID: ${active.id}`,
+      `Stage: ${stage?.stage ?? active.currentStage ?? "unknown"}`,
+    ]
+
+    if (pipeline?.prompt) parts.push(`Original user prompt:\n${pipeline.prompt}`)
+    if (active.pipelineDir) parts.push(`Pipeline directory: ${path.join(active.workspacePath, active.pipelineDir)}`)
+    if (stage?.assignedOutputPath) parts.push(`Expected output artifact: ${path.join(active.workspacePath, stage.assignedOutputPath)}`)
+
+    parts.push(SIGNAL_FOOTER)
+    parts.push(`User message to handle now:\n${content}`)
+    return parts.join("\n\n")
+  }
 
   // ---------------------------------------------------------------------------
   // Infrastructure failure (called by app.ts on connection loss, etc.)

@@ -851,6 +851,36 @@ describe("Orchestrator", () => {
       expect(events.some(e => e.type === "stage_resumed")).toBe(true)
     })
 
+    it("clearInterruptAndRoute repairs a missing OpenCode stage session route before resuming", async () => {
+      const pipelineId = await orchestrator.startPipeline("build a todo app")
+      await signalClassify(orchestrator, engine, events, pipelineState)
+      await signalCompile(orchestrator, engine, events, "compile_brainstorm")
+
+      const brainstormEvt = events.find(e => e.type === "stage_started" && e.stage === "brainstorm")
+      const oldSessionId = (brainstormEvt as any).sessionId
+
+      await orchestrator.abortStageSession(oldSessionId)
+      expect(orchestrator.isStageInterrupted(pipelineId)).toBe(true)
+
+      engine.sessions.delete(oldSessionId)
+      await orchestrator.clearInterruptAndRoute(oldSessionId, "please continue")
+
+      const newSessionId = orchestrator.getActiveStageSessionId(pipelineId)
+      expect(newSessionId).toBeTruthy()
+      expect(newSessionId).not.toBe(oldSessionId)
+      expect(orchestrator.isSessionOwnedByPipeline(oldSessionId)).toBe(false)
+      expect(orchestrator.isSessionOwnedByPipeline(newSessionId!)).toBe(true)
+      expect(orchestrator.isStageInterrupted(pipelineId)).toBe(false)
+
+      const detail = pipelineState.getPipeline(pipelineId)!
+      const stage = detail.stages.find(s => s.stage === "brainstorm" && s.status === "running")!
+      expect(stage.sessionId).toBe(newSessionId)
+
+      const recoveredMessage = engine.messages.find(m => m.sessionId === newSessionId)
+      expect(recoveredMessage?.content).toContain("previous OpenCode route no longer accepted messages")
+      expect(recoveredMessage?.content).toContain("please continue")
+    })
+
   })
 
   describe("edge cases", () => {
