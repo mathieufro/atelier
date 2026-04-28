@@ -657,6 +657,15 @@ export class SessionMonitor {
       return
     }
 
+    // Don't regress QUIET_PENDING back to WORKING just because the sweep ran
+    // before the corroboration window elapsed. QUIET_PENDING is set by an
+    // explicit idle_edge (or an earlier sweep). Only a real activity event
+    // (busy_edge / progress_event) — handled in recordPipelineEvent — should
+    // bring it back to WORKING. Without this guard, a sweep firing within
+    // microseconds of idle_edge causes spurious QUIET_PENDING→WORKING churn
+    // and lets the next sweep skip from WORKING straight to IDLE_DETECTED.
+    if (entry.state === "QUIET_PENDING") return
+
     this.transitionPipeline(entry, "WORKING", "recent_activity")
   }
 

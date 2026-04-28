@@ -16,9 +16,9 @@ import { deployMcpSignalTool } from "../../src/infra/tool-deployer.js"
 // would make all other tests pass while work agents silently lose the tool.
 //
 // bun cold-start + first-time bun install on a fresh tempdir can run long on
-// Windows with AV scanning, and hook timeout is separate from test timeout —
-// beforeEach runs `bun install` so needs its own generous budget.
-describe("atelier_signal MCP subprocess", { timeout: 90_000, hookTimeout: 90_000 }, () => {
+// Windows with AV scanning. Vitest's describe-options bag honors `timeout` for
+// tests but not `hookTimeout` — pass the budget to beforeEach/afterEach directly.
+describe("atelier_signal MCP subprocess", { timeout: 90_000 }, () => {
   let tempDir: string
   let httpServer: Server
   let port: number
@@ -53,7 +53,7 @@ describe("atelier_signal MCP subprocess", { timeout: 90_000, hookTimeout: 90_000
 
     // Deploys the MCP tool + installs deps into tempDir/tools/mcp/
     await deployMcpSignalTool(tempDir)
-  })
+  }, 90_000)
 
   afterEach(async () => {
     if (proc && proc.exitCode === null) {
@@ -62,7 +62,7 @@ describe("atelier_signal MCP subprocess", { timeout: 90_000, hookTimeout: 90_000
     }
     await new Promise<void>((r) => httpServer.close(() => r()))
     try { fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) } catch {}
-  })
+  }, 30_000)
 
   it("exposes atelier_signal and forwards stage_complete to /pipeline/signal", async () => {
     const scriptPath = path.join(tempDir, "tools", "mcp", "atelier_signal_mcp.ts")
