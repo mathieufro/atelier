@@ -333,10 +333,28 @@ describe("AtelierServerManager.start()", () => {
     Object.defineProperty(process, "platform", { value: "win32" })
 
     const registryDir = fs.mkdtempSync(path.join(os.tmpdir(), "atelier-registry-path-"))
+    const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), "atelier-isolated-home-"))
     const registryBun = path.join(registryDir, "bun.EXE")
     fs.writeFileSync(registryBun, "")
     process.env.PATH = ""
     delete process.env.BUN_INSTALL
+
+    // Isolate from host: getRuntimeSearchDirs probes well-known install dirs
+    // (chocolatey, scoop, ~/.bun, ...) derived from these env vars and os.homedir().
+    // Without isolation, a host bun install satisfies the first resolveRuntime call
+    // before augmentPath merges the registry PATH, defeating the test premise.
+    const savedEnv = {
+      ProgramData: process.env.ProgramData,
+      LOCALAPPDATA: process.env.LOCALAPPDATA,
+      USERPROFILE: process.env.USERPROFILE,
+      APPDATA: process.env.APPDATA,
+      HOME: process.env.HOME,
+    }
+    process.env.ProgramData = isolatedHome
+    process.env.LOCALAPPDATA = isolatedHome
+    process.env.USERPROFILE = isolatedHome
+    process.env.APPDATA = isolatedHome
+    process.env.HOME = isolatedHome
 
     const regSpy = vi.fn().mockImplementation((command, args) => {
       const key = args?.[1]
@@ -370,6 +388,11 @@ describe("AtelierServerManager.start()", () => {
       await manager.start({ cwd: workspaceDir })
     } finally {
       fs.rmSync(registryDir, { recursive: true, force: true })
+      fs.rmSync(isolatedHome, { recursive: true, force: true })
+      for (const [key, value] of Object.entries(savedEnv)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
     }
 
     expect(spawnSpy).toHaveBeenCalled()
