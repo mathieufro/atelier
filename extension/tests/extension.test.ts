@@ -51,6 +51,11 @@ vi.mock("vscode", () => ({
     parse: (s: string) => ({ path: s }),
   },
   ProgressLocation: { Notification: 15, SourceControl: 1, Window: 10 },
+  env: {
+    remoteName: "ssh-remote",
+    uiKind: 1,
+    clipboard: { writeText: vi.fn() },
+  },
   window: {
     showErrorMessage: vi.fn(),
     showWarningMessage: vi.fn(),
@@ -150,15 +155,56 @@ vi.mock("../src/install-opencode.js", () => ({
   installOpencode: mockInstallOpencode,
 }))
 
-vi.mock("../src/output-channel-controller.js", () => ({
-  OutputChannelController: vi.fn(() => ({
-    setLevel: vi.fn().mockResolvedValue(undefined),
-    connect: vi.fn().mockResolvedValue(undefined),
-    dispose: vi.fn(),
-    log: vi.fn(),
-    updateBaseUrl: vi.fn(),
-  })),
+const mockOutputChannel = vi.hoisted(() => ({
+  setLevel: vi.fn().mockResolvedValue(undefined),
+  connect: vi.fn().mockResolvedValue(undefined),
+  dispose: vi.fn(),
+  log: vi.fn(),
+  updateBaseUrl: vi.fn(),
 }))
+
+vi.mock("../src/output-channel-controller.js", () => ({
+  OutputChannelController: vi.fn(() => mockOutputChannel),
+}))
+
+describe("Remote SSH startup diagnostics", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    registeredCommands.clear()
+    mockSubscriptions.length = 0
+    panelIdCounter = 0
+    mockAtelierManagerInstance.reconnect.mockResolvedValue(false)
+    mockAtelierManagerInstance.start.mockResolvedValue({ atelierUrl: "http://127.0.0.1:8888" })
+    mockAtelierManagerInstance.atelierUrl = "http://127.0.0.1:8888"
+
+    const mod = await import("../src/extension.js")
+    await mod.deactivate()
+  })
+
+  afterEach(async () => {
+    const mod = await import("../src/extension.js")
+    await mod.deactivate()
+  })
+
+  it("logs remote name, UI kind, and workspace path during startup", async () => {
+    const mod = await import("../src/extension.js")
+    const context = {
+      extensionUri: { path: "/ext" },
+      extensionPath: "/ext",
+      subscriptions: mockSubscriptions,
+      workspaceState: { get: vi.fn().mockReturnValue("info"), update: vi.fn() },
+    }
+
+    await mod.activate(context as any)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockOutputChannel.log).toHaveBeenCalledWith(
+      "info",
+      "startup_context",
+      "remoteName=ssh-remote uiKind=1 workspacePath=/workspace",
+    )
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Pure unit tests
