@@ -35,7 +35,8 @@ export interface OrchestratorInterface {
   startPipelineAsync(prompt: string, opts?: { type?: PipelineType; fromPipelineId?: string; fromStage?: string; model?: ModelRef; variant?: string; sourceSessionId?: string; autonomous?: boolean; pipelineType?: PipelineType; worktreeChoice?: "in-tree" | "worktree" }): { pipelineId: string; completion: Promise<void> }
   abortStageSession(sessionId: string): Promise<void>
   resumeStageSession(sessionId: string): Promise<void>
-   clearInterruptAndRoute(sessionId: string, content: string, opts?: { model?: { providerID: string; modelID: string }; variant?: string }): Promise<void>
+  clearInterruptAndRoute(sessionId: string, content: string, opts?: { model?: { providerID: string; modelID: string }; variant?: string }): Promise<void>
+  routeStageMessage(sessionId: string, content: string, opts?: { attachments?: Attachment[]; model?: { providerID: string; modelID: string }; variant?: string }): Promise<void>
   handleSignal(signal: { type: string; sessionId: string; outputPath?: string; verdict?: string; action?: string; outcome?: string; pipelineType?: string; worktreeChoice?: string }): Promise<void>
   handleStuckRetry(pipelineId: string, stageId: string, action: "fix" | "resume"): Promise<void>
   failPipeline(pipelineId: string, error: string): Promise<void>
@@ -1552,6 +1553,10 @@ export function createApp(options: AppOptions): Hono {
           return { ok: true }
         })
       }
+      return proxyCall(c, async () => {
+        await orchestrator.routeStageMessage(sessionId, content, { attachments, model, variant })
+        return { ok: true }
+      })
     }
 
     // Fire-and-forget: message streams via SSE, don't block the HTTP response
@@ -1616,9 +1621,7 @@ export function createApp(options: AppOptions): Hono {
         options.onMessageRejected?.(message)
         return c.json({ error: message }, 409)
       }
-      getProxyForSession(stageSessionId).then((proxy) =>
-        proxy.sendMessage(stageSessionId, { content, attachments, model, variant })
-      ).catch((err) => {
+      orchestrator.routeStageMessage(stageSessionId, content, { attachments, model, variant }).catch((err) => {
         log?.error("atelier", "message", "pipeline_send_failed", { sessionId: stageSessionId, error: String(err) })
         merger.emit({ type: "send_error", sessionId: stageSessionId, error: err instanceof Error ? err.message : "Message delivery failed" })
       })

@@ -714,6 +714,52 @@ describe("ClaudeCodeEngine", () => {
     await endPromise
   })
 
+  it("drains a message queued mid-turn after the turn result", async () => {
+    let finishFirstTurn: () => void
+    const firstTurnFinished = new Promise<void>((resolve) => { finishFirstTurn = resolve })
+    let secondMessageConsumed = false
+
+    mockQueryFn.mockImplementation(({ prompt }: { prompt: AsyncIterable<unknown> }) => {
+      const iter = prompt[Symbol.asyncIterator]()
+      const generator = (async function* () {
+        await iter.next()
+        yield { type: "system", subtype: "init", session_id: "sdk-queued-1" }
+        await firstTurnFinished
+        yield { type: "result", subtype: "success", result: "first", usage: { input_tokens: 1, output_tokens: 1 } }
+
+        const next = await iter.next()
+        secondMessageConsumed = (next.value as any)?.message?.content === "second"
+        yield { type: "result", subtype: "success", result: "second", usage: { input_tokens: 1, output_tokens: 1 } }
+      })()
+      return Object.assign(generator, {
+        interrupt: vi.fn().mockImplementation(async () => {}),
+        close: vi.fn(),
+      })
+    })
+
+    const session = await engine.createSession({
+      directory: "/workspace",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    await engine.sendMessage(session.id, { content: "first" })
+    await new Promise((r) => setTimeout(r, 10))
+
+    await engine.sendMessage(session.id, { content: "second" })
+    expect(secondMessageConsumed).toBe(false)
+
+    finishFirstTurn!()
+    const deadline = Date.now() + 1000
+    while (!secondMessageConsumed && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
+
+    expect(secondMessageConsumed).toBe(true)
+    expect(mockQueryFn).toHaveBeenCalledTimes(1)
+    expect(events.filter((e) => e.type === "session.idle")).toHaveLength(1)
+    expect(await engine.getSessionOutput(session.id)).toEqual({ text: "second", tokens: { input: 1, output: 1 } })
+  })
+
   it("resumes session when handle is null (disk-resumed session)", async () => {
     mockQueryFn.mockReturnValue(createMockQuery([
       { type: "system", subtype: "init", session_id: "sdk-disk-1" },

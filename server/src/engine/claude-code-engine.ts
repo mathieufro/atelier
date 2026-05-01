@@ -50,6 +50,10 @@ interface LiveSession {
   toolUseMap: Map<string, { toolName: string; messageId: string; input: Record<string, unknown>; startedAt: number }>
   /** Guards against concurrent sendMessage calls on the same session */
   sendInFlight?: boolean
+  /** User messages accepted while a Claude turn is already in progress. */
+  queuedUserMessages: Array<{ type: "user"; message: { role: "user"; content: string } }>
+  /** Timer used to nudge the SDK with the next queued message after a turn settles. */
+  queuedDrainTimer?: ReturnType<typeof setTimeout>
   /** Current streaming message ID (for delta correlation) */
   _streamingMessageId?: string
   /** Promise that resolves when the current event loop finishes */
@@ -61,6 +65,8 @@ interface LiveSession {
   /** True while the SDK is actively processing a turn (first event through result).
    *  False between turns (after result, waiting on channel). */
   _midTurn?: boolean
+  /** True after a user message has been pushed and before the SDK yields that turn's result. */
+  _turnPending?: boolean
   /** Guards against concurrent interruptAndRestart calls */
   _restarting?: boolean
   /** Tracks the content block ID of an actively-streaming tool_use block.
@@ -159,7 +165,7 @@ export class ClaudeCodeEngine implements AgentEngine {
     return {
       lastYieldAt: session.lastYieldAt,
       lastSubtype: session.lastProgressSubtype ?? "unknown",
-      busy: session.status === "active" && session.queryHandle !== null,
+      busy: session._turnPending === true || session._midTurn === true || session.pendingToolCount > 0,
       hasPendingInteractions: session.pendingPermissions.size > 0 || session.pendingQuestions.size > 0,
       pendingToolCount: session.pendingToolCount,
     }
@@ -178,6 +184,7 @@ export class ClaudeCodeEngine implements AgentEngine {
       config: { ...config },
       status: "pending",
       toolUseMap: new Map(),
+      queuedUserMessages: [],
       pendingToolCount: 0,
       _eventLoopPromise: null,
       lastYieldAt: 0,
@@ -227,6 +234,7 @@ export class ClaudeCodeEngine implements AgentEngine {
           } as SessionConfig & { model?: { providerID: string; modelID: string }; variant?: string },
           status: "active", // Mark as active so we hit the resume path below
           toolUseMap: new Map(),
+          queuedUserMessages: [],
           pendingToolCount: 0,
           _eventLoopPromise: null,
           lastYieldAt: 0,
@@ -377,6 +385,7 @@ export class ClaudeCodeEngine implements AgentEngine {
         type: "user",
         message: { role: "user", content: message.content },
       })
+      session._turnPending = true
       // Emit user message event so the UI displays the injected prompt (pipeline sessions only).
       // Normal sessions show the user message via optimistic UI + JSONL page load; emitting
       // message.completed there causes a duplicate.
@@ -396,20 +405,9 @@ export class ClaudeCodeEngine implements AgentEngine {
       session._eventLoopPromise = this.runEventLoop(session)
       session._eventLoopPromise.catch(() => {})
     } else {
-      // Active session — respawn if handle is dead, otherwise queue into live channel
-      // If event loop exited (queryHandle null), respawn before pushing to channel.
-      if (!session.queryHandle) {
-        this.respawnSession(session)
-      } else {
-        // Live handle — runEventLoop already running, re-emit session.busy for the new turn
-        this.dispatchEvent({ type: "session.busy", sessionId: session.id })
-        this.busyCallback?.(session.id)
-        this.normalizedEventCallback?.({ kind: "busy_edge", sessionId: session.id })
-        this.metadataStore?.update(session.id, { status: "busy", lastActiveAt: Date.now() })
-      }
-
-      // The SDK persists all messages to its own JSONL — Atelier does not write transcripts.
-      session.channel.push({ type: "user", message: { role: "user", content: message.content } })
+      // Active session — send immediately only between turns. Mid-turn messages
+      // are held until result so the SDK is nudged after it starts waiting again.
+      const userMessage = { type: "user" as const, message: { role: "user" as const, content: message.content } }
       // Emit user message event for pipeline sessions so the UI displays the injected prompt.
       // Normal sessions show user messages via optimistic UI + JSONL page load.
       if (isPipelineSession) {
@@ -421,11 +419,67 @@ export class ClaudeCodeEngine implements AgentEngine {
           contentBlocks: [{ type: "text", text: message.content }],
         })
       }
-      this.log?.debug("atelier", "session", "claude_message_queued", { sessionId: session.id, data: { contentLength: message.content?.length ?? 0 } })
+      if (session._midTurn || session._turnPending || session.queuedUserMessages.length > 0) {
+        session.queuedUserMessages.push(userMessage)
+        this.log?.debug("atelier", "session", "claude_message_queued", { sessionId: session.id, data: { contentLength: message.content.length, queuedCount: session.queuedUserMessages.length } })
+        if (!session._midTurn && !session._turnPending) this.scheduleQueuedMessageDrain(session)
+      } else {
+        this.pushUserMessage(session, userMessage)
+        this.log?.debug("atelier", "session", "claude_message_sent", { sessionId: session.id, data: { contentLength: message.content.length } })
+      }
     }
     } finally {
       session.sendInFlight = false
     }
+  }
+
+  private pushUserMessage(session: LiveSession, message: { type: "user"; message: { role: "user"; content: string } }): void {
+    const respawned = !session.queryHandle
+    if (!session.queryHandle) this.respawnSession(session)
+
+    if (!respawned) {
+      this.dispatchEvent({ type: "session.busy", sessionId: session.id })
+      this.busyCallback?.(session.id)
+      this.normalizedEventCallback?.({ kind: "busy_edge", sessionId: session.id })
+      this.metadataStore?.update(session.id, { status: "busy", lastActiveAt: Date.now() })
+    }
+
+    session._turnPending = true
+    // The SDK persists all messages to its own JSONL — Atelier does not write transcripts.
+    session.channel.push(message)
+  }
+
+  private scheduleQueuedMessageDrain(session: LiveSession): void {
+    if (session.queuedDrainTimer || session.queuedUserMessages.length === 0 || session._deleting) return
+
+    session.queuedDrainTimer = setTimeout(() => {
+      session.queuedDrainTimer = undefined
+      try {
+        this.drainNextQueuedMessage(session)
+      } catch (err) {
+        this.log?.error("atelier", "session", "claude_queue_drain_failed", { sessionId: session.id, error: String(err) })
+        this.dispatchEvent({
+          type: "session.error",
+          sessionId: session.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }, 0)
+  }
+
+  private drainNextQueuedMessage(session: LiveSession): void {
+    if (!this.sessions.has(session.id)) return
+    if (session._midTurn || session._turnPending || session.queuedUserMessages.length === 0) return
+
+    const message = session.queuedUserMessages[0]
+    if (!message) return
+
+    this.pushUserMessage(session, message)
+    session.queuedUserMessages.shift()
+    this.log?.debug("atelier", "session", "claude_queued_message_drained", {
+      sessionId: session.id,
+      data: { remainingQueuedCount: session.queuedUserMessages.length },
+    })
   }
 
   waitForIdle(sessionId: string, timeoutMs?: number): Promise<void> {
@@ -521,6 +575,11 @@ export class ClaudeCodeEngine implements AgentEngine {
         if (opts?.drainQueue) {
           // Explicit user abort — discard any queued messages, just stop.
           session.channel.drain()
+          session.queuedUserMessages.length = 0
+          if (session.queuedDrainTimer) {
+            clearTimeout(session.queuedDrainTimer)
+            session.queuedDrainTimer = undefined
+          }
         }
 
         // The SDK's interrupt yields a result message which triggers idle
@@ -577,6 +636,7 @@ export class ClaudeCodeEngine implements AgentEngine {
     // Nuclear fallback — ensure the subprocess is dead.
     this.killSdkSubprocess(sessionId)
     if (session) session.channel.close()
+    if (session?.queuedDrainTimer) clearTimeout(session.queuedDrainTimer)
     this.sessions.delete(sessionId)
     this.metadataStore?.delete(sessionId)
     this.log?.debug("atelier", "session", "claude_session_deleted", { sessionId })
@@ -590,6 +650,7 @@ export class ClaudeCodeEngine implements AgentEngine {
     if (!session) return false
     // Don't evict active sessions — they're still producing events
     if (session.queryHandle !== null) return false
+    if (session.queuedDrainTimer) clearTimeout(session.queuedDrainTimer)
     session.channel.close()
     this.sessions.delete(sessionId)
     this.log?.debug("atelier", "session", "session_evicted", { sessionId })
@@ -938,6 +999,7 @@ export class ClaudeCodeEngine implements AgentEngine {
         if (msg.type === "result") {
           // Turn completed normally
           session._midTurn = false
+          session._turnPending = false
           session.lastOutput = this.extractOutput(msg)
           const usage = (msg.usage as { input_tokens?: number; output_tokens?: number }) ?? {}
           const idleEvent: AtelierEvent = {
@@ -948,6 +1010,11 @@ export class ClaudeCodeEngine implements AgentEngine {
             durationMs: msg.duration_ms as number | undefined,
           }
           this.log?.debug("atelier", "session", "claude_turn_completed", { sessionId: session.id, data: { inputTokens: usage.input_tokens ?? 0, outputTokens: usage.output_tokens ?? 0 } })
+          if (session.queuedUserMessages.length > 0) {
+            this.scheduleQueuedMessageDrain(session)
+            continue
+          }
+
           this.dispatchEvent(idleEvent)
           emittedIdle = true
           this.metadataStore?.update(session.id, { status: "idle", lastActiveAt: Date.now() })
@@ -983,6 +1050,8 @@ export class ClaudeCodeEngine implements AgentEngine {
       // (crash, close(), or VS Code restart).  Clean up and mark queryHandle
       // as null so the next sendMessage knows to call respawnSession.
       session.queryHandle = null
+      session._midTurn = false
+      session._turnPending = false
       this.log?.debug("atelier", "session", "claude_event_loop_ended", { sessionId: session.id })
       // Spec invariant: session.error is always followed by session.idle.
       // Also emit idle if the generator ended without a result message.
@@ -996,6 +1065,7 @@ export class ClaudeCodeEngine implements AgentEngine {
         this.idleCallback?.(session.id)
         this.normalizedEventCallback?.({ kind: "idle_edge", sessionId: session.id })
       }
+      this.scheduleQueuedMessageDrain(session)
     }
   }
 

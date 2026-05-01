@@ -370,7 +370,7 @@ export type WebviewMessage =
   | { type: "cancelRalphLoop"; sessionId: string; _rpcId?: string }
   | { type: "forkStageSession"; sessionId: string; _rpcId?: string }
   | { type: "stageModels.confirm"; pipelineId: string; stageModels: Record<string, StageModelConfig>; _rpcId?: string }
-  | { type: "stageModels.update"; pipelineId: string; stage: string; config: StageModelConfig; _rpcId?: string }
+  | { type: "stageModels.update"; pipelineId: string; stage?: string; config?: StageModelConfig; stageModels?: Record<string, StageModelConfig>; _rpcId?: string }
   | { type: "presets.list"; pipelineType: string; _rpcId?: string }
   | { type: "presets.save"; pipelineType: string; name: string; stageModels: Record<string, StageModelConfig>; _rpcId?: string }
   | { type: "presets.delete"; presetId: string; _rpcId?: string }

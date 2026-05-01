@@ -1,4 +1,4 @@
-import type { Logger, BackendId, PipelineType } from "@atelier/core"
+import type { Attachment, Logger, BackendId, PipelineType } from "@atelier/core"
 import { noopLogger } from "@atelier/core"
 import type { AgentEngine } from "@atelier/core/agent-engine"
 import type { PipelineState, StageData } from "./pipeline-state.js"
@@ -80,7 +80,23 @@ export class Orchestrator {
   /** Resolve the engine for a pipeline's session (looks up the pipeline's backendId). */
   private async resolveEngineForSession(sessionId: string): Promise<AgentEngine> {
     const pipeline = this.findPipelineBySession(sessionId)
-    return this.resolveEngine(pipeline?.backendId ?? "opencode")
+    return this.resolveEngine(this.resolveBackendForPipelineSession(sessionId, pipeline))
+  }
+
+  private resolveBackendForPipelineSession(sessionId: string, active: ActivePipeline | null = this.findPipelineBySession(sessionId)): BackendId {
+    const metadataBackend = this.config.registry?.resolveBackendForSession(sessionId)
+    if (metadataBackend) return metadataBackend
+
+    const stageId = active?.sessionMap.get(sessionId)
+    const stageName = active && stageId
+      ? this.ps.getPipeline(active.id)?.stages.find((stage) => stage.id === stageId)?.stage
+      : undefined
+    const stageModel = active && stageName ? this.ps.getStageModel(active.id, stageName) : undefined
+    if (stageModel && this.config.registry) {
+      return this.config.registry.resolveBackend({ providerID: stageModel.providerID, modelID: stageModel.modelID })
+    }
+
+    return active?.backendId ?? "opencode"
   }
 
   constructor(config: OrchestratorConfig) {
@@ -143,7 +159,10 @@ export class Orchestrator {
       },
       logger: config.logger,
       getEngineSessionState: (sessionId) => {
-        const backendId = this.standaloneSessionBackend.get(sessionId)
+        const pipeline = this.findPipelineBySession(sessionId)
+        const backendId = pipeline
+          ? this.resolveBackendForPipelineSession(sessionId, pipeline)
+          : this.standaloneSessionBackend.get(sessionId)
         if (!backendId) return null
         const engine = this.config.registry?.getEngineIfReady(backendId as import("@atelier/core").BackendId)
         if (!engine || typeof (engine as any).getSessionState !== "function") return null
@@ -1189,7 +1208,32 @@ export class Orchestrator {
       this.ps.updatePipelineModel(active.id, active.model ?? null, opts.variant ?? null)
     }
 
-    const stage = this.ps.getPipeline(active.id)?.stages.find(s => s.id === stageId) ?? null
+    const routed = await this.sendStageMessageWithRepair(sessionId, content, {
+      model: active.model,
+      variant: active.variant,
+    })
+
+    // Clear interrupted flag only after OpenCode accepts the resume message.
+    this.setInterrupted(active.id, stageId, false)
+    this.monitor.resetSession(routed.sessionId)
+    this.em.emit({ type: "stage_resumed", pipelineId: active.id, stageId, sessionId: routed.sessionId })
+    this.logger.debug("atelier", "message", "message_routed", { pipelineId: active.id, stageId, sessionId: routed.sessionId, data: { contentLength: routed.content.length } })
+  }
+
+  async routeStageMessage(sessionId: string, content: string, opts?: { attachments?: Attachment[]; model?: { providerID: string; modelID: string }; variant?: string }): Promise<void> {
+    await this.sendStageMessageWithRepair(sessionId, content, opts)
+  }
+
+  private async sendStageMessageWithRepair(
+    sessionId: string,
+    content: string,
+    opts?: { attachments?: Attachment[]; model?: { providerID: string; modelID: string }; variant?: string },
+  ): Promise<{ sessionId: string; content: string }> {
+    const active = this.findPipelineBySession(sessionId)
+    if (!active) throw new Error(`Session ${sessionId} is not owned by an active pipeline`)
+    const stageId = active.sessionMap.get(sessionId)
+    if (!stageId) throw new Error(`Session ${sessionId} has no active pipeline stage`)
+
     let targetSessionId = sessionId
     let messageContent = content
     let engine = await this.resolveEngineForSession(sessionId)
@@ -1197,28 +1241,27 @@ export class Orchestrator {
     try {
       await engine.sendMessage(targetSessionId, {
         content: messageContent,
-        model: active.model,
-        variant: active.variant,
+        attachments: opts?.attachments,
+        model: opts?.model,
+        variant: opts?.variant,
       })
     } catch (err) {
       const replacementId = await this.repairMissingOpenCodeStageRoute(active, stageId, sessionId, err)
       if (!replacementId) throw err
 
+      const stage = this.ps.getPipeline(active.id)?.stages.find(s => s.id === stageId) ?? null
       targetSessionId = replacementId
       engine = await this.resolveEngineForSession(targetSessionId)
       messageContent = this.buildRecoveredStageMessage(active, stage, content)
       await engine.sendMessage(targetSessionId, {
         content: messageContent,
-        model: active.model,
-        variant: active.variant,
+        attachments: opts?.attachments,
+        model: opts?.model,
+        variant: opts?.variant,
       })
     }
 
-    // Clear interrupted flag only after OpenCode accepts the resume message.
-    this.setInterrupted(active.id, stageId, false)
-    this.monitor.resetSession(targetSessionId)
-    this.em.emit({ type: "stage_resumed", pipelineId: active.id, stageId, sessionId: targetSessionId })
-    this.logger.debug("atelier", "message", "message_routed", { pipelineId: active.id, stageId, sessionId: targetSessionId, data: { contentLength: messageContent.length } })
+    return { sessionId: targetSessionId, content: messageContent }
   }
 
   private isSessionNotFoundError(err: unknown): boolean {
@@ -1233,17 +1276,22 @@ export class Orchestrator {
     oldSessionId: string,
     err: unknown,
   ): Promise<string | null> {
-    if (active.backendId !== "opencode" || !this.isSessionNotFoundError(err)) return null
+    if (this.resolveBackendForPipelineSession(oldSessionId, active) !== "opencode" || !this.isSessionNotFoundError(err)) return null
 
     const pipeline = this.ps.getPipeline(active.id)
     const stage = pipeline?.stages.find(s => s.id === stageId)
     if (!stage) return null
+    const stageModel = this.ps.getStageModel(active.id, stage.stage)
+    const model = stageModel
+      ? { providerID: stageModel.providerID, modelID: stageModel.modelID }
+      : active.model
+    const variant = stageModel?.variant ?? active.variant
 
     const engine = await this.resolveEngine("opencode")
     const session = await createInternalSession(engine, active.workspacePath, this.em, {
       parentID: active.id,
-      model: active.model,
-      variant: active.variant,
+      model,
+      variant,
       title: STAGE_TITLES[stage.stage] ?? stage.stage,
     })
 
@@ -1835,14 +1883,15 @@ export class Orchestrator {
   private cleanupStageSession(pipelineId: string, stageId: string): void {
      const active = this.getPipeline(pipelineId)
      if (!active) return
-     // Capture backendId before clearing maps (resolveEngineForSession depends on sessionIndex)
-     const backendId = active.backendId
-     // Find the sessionId for this stage
-     let sessionId: string | undefined
-     for (const [sid, sId] of active.sessionMap) {
-       if (sId === stageId) { sessionId = sid; break }
-     }
-     if (!sessionId) return
+      // Find the sessionId for this stage
+      let sessionId: string | undefined
+      for (const [sid, sId] of active.sessionMap) {
+        if (sId === stageId) { sessionId = sid; break }
+      }
+      if (!sessionId) return
+      // Capture backendId before clearing maps; mixed-backend pipelines may use a
+      // different backend for this stage than the pipeline's initial backend.
+      const backendId = this.resolveBackendForPipelineSession(sessionId, active)
 
       active.sessionMap.delete(sessionId)
       this.sessionIndex.delete(sessionId)

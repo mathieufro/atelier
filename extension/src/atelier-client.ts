@@ -32,6 +32,7 @@ export interface AtelierClient {
 
   // Stage models and presets
   confirmStageModels(pipelineId: string, stageModels: Record<string, StageModelConfig>): Promise<void>
+  updateStageModels(pipelineId: string, stageModels: Record<string, StageModelConfig>): Promise<void>
   updateStageModel(pipelineId: string, stage: string, config: StageModelConfig): Promise<void>
   listPresets(pipelineType: string): Promise<PresetRecord[]>
   savePreset(pipelineType: string, name: string, stageModels: Record<string, StageModelConfig>): Promise<PresetRecord>
@@ -333,6 +334,10 @@ export function createAtelierClient(baseUrl: string, log?: (level: string, actio
     // --- Stage models and presets ---
     async confirmStageModels(pipelineId: string, stageModels: Record<string, StageModelConfig>) {
       return request<void>("POST", `/pipelines/${encodeURIComponent(pipelineId)}/stage-models`, { stageModels, confirmed: true })
+    },
+
+    async updateStageModels(pipelineId: string, stageModels: Record<string, StageModelConfig>) {
+      return request<void>("POST", `/pipelines/${encodeURIComponent(pipelineId)}/stage-models`, { stageModels })
     },
 
     async updateStageModel(pipelineId: string, stage: string, config: StageModelConfig) {

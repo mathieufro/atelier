@@ -121,6 +121,37 @@ describe("SessionMonitor pipeline mode", () => {
       expect(exhausted).toHaveBeenCalledTimes(1)
     })
 
+    it("suppresses pipeline idle detection while engine has a silent turn pending", () => {
+      let now = 0
+      const exhausted = vi.fn()
+      const monitor = new SessionMonitor({
+        now: () => now,
+        onExhausted: exhausted,
+        getEngineSessionState: () => ({
+          busy: true,
+          hasPendingInteractions: false,
+          lastYieldAt: 0,
+          lastSubtype: "unknown",
+          pendingToolCount: 0,
+        }),
+      })
+
+      monitor.registerPipelineSession({
+        pipelineId: "p1",
+        stageId: "st1",
+        stage: "implement",
+        stageMode: "autonomous",
+        sessionId: "sess-silent-thinking",
+        stageOverride: { quietWindowMs: 0, quietCorroborationMs: 0 },
+      })
+
+      now = 600_000
+      monitor.sweep()
+
+      expect(monitor.getSessionSnapshot("sess-silent-thinking")?.state).toBe("WORKING")
+      expect(exhausted).not.toHaveBeenCalled()
+    })
+
     it("resolves config precedence as stage override > pipeline config > defaults", () => {
       let now = 0
       const monitor = new SessionMonitor({

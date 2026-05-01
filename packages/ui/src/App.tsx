@@ -636,12 +636,12 @@ function AppInner(props: AppProps) {
   const handleStageModelChange = (stage: string, config: StageModelConfig) => {
     const pid = activePipelineId()
     if (!pid) return
-    setStageModels(prev => ({ ...prev, [stage]: config }))
+    const models = { ...stageModels(), [stage]: config }
+    setStageModels(models)
     post({
       type: "stageModels.update",
       pipelineId: pid,
-      stage,
-      config,
+      stageModels: models,
     })
   }
 
@@ -658,6 +658,13 @@ function AppInner(props: AppProps) {
 
   const handleLoadPreset = (preset: PresetRecord) => {
     setStageModels(preset.stageModels)
+    const pid = activePipelineId()
+    if (!pid) return
+    post({
+      type: "stageModels.update",
+      pipelineId: pid,
+      stageModels: preset.stageModels,
+    })
   }
 
   const isBusy = () => {

@@ -306,8 +306,12 @@ export function createBridge(
           break
         }
         case "stageModels.update": {
-          log?.log("debug", "stage_models_update", `pipeline=${msg.pipelineId} stage=${msg.stage}`)
-          await client.updateStageModel(msg.pipelineId, msg.stage, msg.config)
+          log?.log("debug", "stage_models_update", `pipeline=${msg.pipelineId} stage=${msg.stage ?? "all"}`)
+          if (msg.stageModels) {
+            await client.updateStageModels(msg.pipelineId, msg.stageModels)
+          } else if (msg.stage && msg.config) {
+            await client.updateStageModel(msg.pipelineId, msg.stage, msg.config)
+          }
           if (rpcId) postMessage({ type: "_rpc", _rpcId: rpcId, ok: true })
           break
         }

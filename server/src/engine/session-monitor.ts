@@ -595,6 +595,13 @@ export class SessionMonitor {
       this.transitionPipeline(entry, "WORKING", "infra_recovered")
     }
 
+    const engineState = this.deps.getEngineSessionState?.(entry.sessionId)
+    if (engineState?.busy) {
+      entry.pendingToolCount = engineState.pendingToolCount
+      this.transitionPipeline(entry, "WORKING", engineState.hasPendingInteractions ? "engine_interaction_pending" : "engine_turn_pending")
+      return
+    }
+
     if (entry.pendingInteractionIds.size > 0) {
       this.log?.debug("atelier", "watchdog", "evaluate_interactive_wait", {
         sessionId: entry.sessionId,
