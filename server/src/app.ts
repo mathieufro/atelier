@@ -1649,15 +1649,19 @@ export function createApp(options: AppOptions): Hono {
 
 // --- Validation helpers ---
 
-// Short TTL cache for merged models, scoped per registry instance to avoid
-// cross-test pollution when multiple createApp() calls share the same process.
+// Long-lived cache for merged models, scoped per registry instance to avoid
+// cross-test pollution. The merged list rarely changes once a backend is up,
+// so the previous 5s TTL was paying the full Claude SDK helper spawn (~900ms)
+// every 30s on the message hot path. We now keep the cache fresh in the
+// background (see startMergedModelsRefresher) and the foreground validation
+// reads from a stale-but-warm cache when available.
 const _mergedModelsCaches = new WeakMap<BackendRegistry, { models: Array<Record<string, unknown>>; ts: number }>()
-const CONFIG_CACHE_TTL_MS = 5000
+const _mergedModelsRefreshing = new WeakMap<BackendRegistry, Promise<Array<Record<string, unknown>>>>()
+const CONFIG_CACHE_FRESH_MS = 60_000   // serve from cache without refresh
+const CONFIG_CACHE_STALE_MS = 5 * 60_000 // serve stale cache + kick async refresh
+const CONFIG_BACKGROUND_REFRESH_MS = 30_000
 
-async function getMergedModels(registry: BackendRegistry): Promise<Array<Record<string, unknown>>> {
-  const now = Date.now()
-  const cached = _mergedModelsCaches.get(registry)
-  if (cached && now - cached.ts < CONFIG_CACHE_TTL_MS) return cached.models
+async function fetchMergedModels(registry: BackendRegistry): Promise<Array<Record<string, unknown>>> {
   const models: Array<Record<string, unknown>> = []
   for (const backendId of registry.listReadyBackends()) {
     const proxy = registry.getProxyIfReady(backendId)
@@ -1668,8 +1672,45 @@ async function getMergedModels(registry: BackendRegistry): Promise<Array<Record<
       } catch { /* skip unavailable backends */ }
     }
   }
-  _mergedModelsCaches.set(registry, { models, ts: now })
+  _mergedModelsCaches.set(registry, { models, ts: Date.now() })
   return models
+}
+
+function refreshMergedModelsInBackground(registry: BackendRegistry): void {
+  if (_mergedModelsRefreshing.has(registry)) return
+  const p = fetchMergedModels(registry).finally(() => _mergedModelsRefreshing.delete(registry))
+  _mergedModelsRefreshing.set(registry, p)
+  p.catch(() => {})
+}
+
+async function getMergedModels(registry: BackendRegistry): Promise<Array<Record<string, unknown>>> {
+  const now = Date.now()
+  const cached = _mergedModelsCaches.get(registry)
+  if (cached) {
+    const age = now - cached.ts
+    if (age < CONFIG_CACHE_FRESH_MS) return cached.models
+    if (age < CONFIG_CACHE_STALE_MS) {
+      // Stale-but-usable: kick background refresh, return cached.
+      refreshMergedModelsInBackground(registry)
+      return cached.models
+    }
+  }
+  // Cold or very stale: must fetch synchronously so callers (route validation)
+  // get correct data. Reuse an in-flight background refresh if any.
+  const inflight = _mergedModelsRefreshing.get(registry)
+  if (inflight) return inflight
+  return fetchMergedModels(registry)
+}
+
+/** Start a background interval that keeps the merged models cache warm so the
+ *  message hot path never blocks on the Claude SDK helper subprocess. */
+export function startMergedModelsRefresher(registry: BackendRegistry): { stop: () => void } {
+  // Initial warm-up — best-effort.
+  refreshMergedModelsInBackground(registry)
+  const handle = setInterval(() => refreshMergedModelsInBackground(registry), CONFIG_BACKGROUND_REFRESH_MS)
+  // Don't keep the process alive just for the refresher.
+  if (typeof (handle as { unref?: () => void })?.unref === "function") (handle as { unref: () => void }).unref()
+  return { stop: () => clearInterval(handle) }
 }
 
 async function validateModelAndVariant(

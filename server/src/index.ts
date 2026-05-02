@@ -1,4 +1,4 @@
-import { createApp } from "./app.js"
+import { createApp, startMergedModelsRefresher } from "./app.js"
 import { createPipelineState } from "./orchestration/pipeline-state.js"
 import { createEventMerger } from "./engine/event-merger.js"
 import { RalphLoopController } from "./ralph-loop-controller.js"
@@ -572,6 +572,10 @@ async function main() {
     registry.getProxy("claude-code")
   ).then(() => {
     serverLogger.info("atelier", "server", "claude_code_ready")
+    // Once a backend is ready, start the merged-models refresher so the
+    // /message hot path always reads from a warm cache (avoids 900ms helper
+    // spawn that previously blocked every send after a 30s idle window).
+    startMergedModelsRefresher(registry)
   }).catch((err) => {
     serverLogger.error("atelier", "server", "claude_code_init_failed", { error: String(err) })
   })

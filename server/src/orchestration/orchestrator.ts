@@ -1191,18 +1191,31 @@ export class Orchestrator {
 
   /** Clear interrupt and route a message to the stage session.
    *  If model/variant are provided, update the pipeline's stored model so
-   *  subsequent stages also use the new selection. */
+   *  subsequent stages also use the new selection — but only when the new
+   *  model resolves to the same backend as the current stage's session.
+   *  Crossing backends mid-pipeline would orphan the live session and hand
+   *  the next stages an incompatible default. */
   async clearInterruptAndRoute(sessionId: string, content: string, opts?: { model?: { providerID: string; modelID: string }; variant?: string }): Promise<void> {
     const active = this.findPipelineBySession(sessionId)
     if (!active) return
     const stageId = active.sessionMap.get(sessionId)
     if (!stageId) return
 
-    // Apply model/variant override if provided
+    // Apply model/variant override only when it stays within the active session's backend.
     if (opts?.model) {
-      active.model = opts.model
-      active.variant = opts.variant
-      this.ps.updatePipelineModel(active.id, opts.model, opts.variant ?? null)
+      const sessionBackend = this.resolveBackendForPipelineSession(sessionId, active)
+      const newBackend = this.config.registry?.resolveBackend({ providerID: opts.model.providerID, modelID: opts.model.modelID })
+      if (!newBackend || newBackend === sessionBackend) {
+        active.model = opts.model
+        active.variant = opts.variant
+        this.ps.updatePipelineModel(active.id, opts.model, opts.variant ?? null)
+      } else {
+        this.logger.warn("atelier", "pipeline", "resume_model_backend_mismatch_ignored", {
+          pipelineId: active.id,
+          sessionId,
+          data: { sessionBackend, newBackend, modelId: opts.model.modelID },
+        })
+      }
     } else if (opts?.variant !== undefined) {
       active.variant = opts.variant
       this.ps.updatePipelineModel(active.id, active.model ?? null, opts.variant ?? null)
@@ -1237,13 +1250,18 @@ export class Orchestrator {
     let targetSessionId = sessionId
     let messageContent = content
     let engine = await this.resolveEngineForSession(sessionId)
+    // The per-stage model is the authoritative one — the user-provided opts.model
+    // is just a UI-level hint and may belong to a different backend in mixed-
+    // backend pipelines. Forwarding it blindly would either be ignored (active
+    // sessions ignore the model field) or cross backends and break routing.
+    const { model: stageMessageModel, variant: stageMessageVariant } = this.resolveStageMessageModel(active, stageId, opts)
 
     try {
       await engine.sendMessage(targetSessionId, {
         content: messageContent,
         attachments: opts?.attachments,
-        model: opts?.model,
-        variant: opts?.variant,
+        model: stageMessageModel,
+        variant: stageMessageVariant,
       })
     } catch (err) {
       const replacementId = await this.repairMissingOpenCodeStageRoute(active, stageId, sessionId, err)
@@ -1253,15 +1271,39 @@ export class Orchestrator {
       targetSessionId = replacementId
       engine = await this.resolveEngineForSession(targetSessionId)
       messageContent = this.buildRecoveredStageMessage(active, stage, content)
+      const repaired = this.resolveStageMessageModel(active, stageId, opts)
       await engine.sendMessage(targetSessionId, {
         content: messageContent,
         attachments: opts?.attachments,
-        model: opts?.model,
-        variant: opts?.variant,
+        model: repaired.model,
+        variant: repaired.variant,
       })
     }
 
     return { sessionId: targetSessionId, content: messageContent }
+  }
+
+  /** Resolve the (model, variant) tuple to send with a stage message. The
+   *  per-stage configured model wins over the user-provided UI hint, falling
+   *  back to the pipeline default. */
+  private resolveStageMessageModel(
+    active: ActivePipeline,
+    stageId: string,
+    opts: { model?: { providerID: string; modelID: string }; variant?: string } | undefined,
+  ): { model?: { providerID: string; modelID: string }; variant?: string } {
+    const pipeline = this.ps.getPipeline(active.id)
+    const stage = pipeline?.stages.find((s) => s.id === stageId)
+    const stageModel = stage ? this.ps.getStageModel(active.id, stage.stage) : undefined
+    if (stageModel) {
+      return {
+        model: { providerID: stageModel.providerID, modelID: stageModel.modelID },
+        variant: stageModel.variant ?? opts?.variant ?? active.variant,
+      }
+    }
+    return {
+      model: opts?.model ?? active.model,
+      variant: opts?.variant ?? active.variant,
+    }
   }
 
   private isSessionNotFoundError(err: unknown): boolean {

@@ -42,6 +42,12 @@ export class OpenCodeEngine implements AgentEngine {
   private static readonly RECONNECT_WARN_COOLDOWN_MS = 10_000
 
   private metadataStore?: SessionMetadataStore
+  /** Per-session busy state, derived from session.busy / session.idle / session.error
+   *  SSE events. Used by the session monitor to short-circuit stuck detection
+   *  while the engine knows the agent is genuinely processing. */
+  private sessionBusy = new Map<string, { busy: boolean; lastYieldAt: number }>()
+  /** Pending interaction counters per session (questions + permissions). */
+  private sessionPendingInteractions = new Map<string, number>()
 
   constructor(baseUrl: string, options?: { metadataStore?: SessionMetadataStore }) {
     this.client = createOpencodeClient({ baseUrl })
@@ -183,13 +189,21 @@ export class OpenCodeEngine implements AgentEngine {
 
     // Session busy: agent is actively processing
     if (payload.type === "session.busy" && sessionId) {
+      this.sessionBusy.set(sessionId, { busy: true, lastYieldAt: Date.now() })
       this.busyCallback?.(sessionId)
       this.metadataStore?.update(sessionId, { status: "busy", lastActiveAt: Date.now() })
     }
 
     // Session lifecycle: resolve or reject waitForIdle promises
     if (payload.type === "session.idle" || payload.type === "session.error") {
+      if (sessionId) this.sessionBusy.set(sessionId, { busy: false, lastYieldAt: Date.now() })
       this.handleSessionLifecycleEvent(payload, sessionId)
+    }
+
+    // Track activity for busy lastYieldAt while busy.
+    if (sessionId && payload.type !== "session.idle" && payload.type !== "session.error") {
+      const cur = this.sessionBusy.get(sessionId)
+      if (cur?.busy) cur.lastYieldAt = Date.now()
     }
 
     // Forward message.updated to orchestrator for direct intervention detection
@@ -205,15 +219,26 @@ export class OpenCodeEngine implements AgentEngine {
     if (payload.type === "question.asked" && this.questionCallback) {
       const props = payload.properties as Record<string, unknown> | undefined
       if (props?.id && props?.sessionID) {
-        this.questionCallback(props.sessionID as string, props.id as string, props.questions as unknown[] | undefined)
+        const sid = props.sessionID as string
+        this.sessionPendingInteractions.set(sid, (this.sessionPendingInteractions.get(sid) ?? 0) + 1)
+        this.questionCallback(sid, props.id as string, props.questions as unknown[] | undefined)
       }
     }
 
     if (payload.type === "permission.asked" && this.permissionCallback) {
       const props = payload.properties as Record<string, unknown> | undefined
       if (props?.id && props?.sessionID) {
-        this.permissionCallback(props.sessionID as string, props.id as string)
+        const sid = props.sessionID as string
+        this.sessionPendingInteractions.set(sid, (this.sessionPendingInteractions.get(sid) ?? 0) + 1)
+        this.permissionCallback(sid, props.id as string)
       }
+    }
+
+    // Pending-interaction decrement when the agent moves on past the prompt.
+    if ((payload.type === "question.replied" || payload.type === "permission.replied") && sessionId) {
+      const cur = this.sessionPendingInteractions.get(sessionId) ?? 0
+      if (cur > 1) this.sessionPendingInteractions.set(sessionId, cur - 1)
+      else this.sessionPendingInteractions.delete(sessionId)
     }
 
     // Forward raw event to legacy OpenCode SSE stream
@@ -294,6 +319,28 @@ export class OpenCodeEngine implements AgentEngine {
     })
 
     return { id }
+  }
+
+  /** Engine-side view of the session's runtime state. The session monitor
+   *  consults this to short-circuit stuck detection while the engine knows
+   *  the agent is genuinely processing — symmetric to ClaudeCodeEngine.getSessionState. */
+  getSessionState(sessionId: string): {
+    lastYieldAt: number
+    lastSubtype: string
+    busy: boolean
+    hasPendingInteractions: boolean
+    pendingToolCount: number
+  } | null {
+    const busyEntry = this.sessionBusy.get(sessionId)
+    const pendingInteractions = this.sessionPendingInteractions.get(sessionId) ?? 0
+    if (!busyEntry && pendingInteractions === 0) return null
+    return {
+      lastYieldAt: busyEntry?.lastYieldAt ?? 0,
+      lastSubtype: "unknown",
+      busy: busyEntry?.busy === true || pendingInteractions > 0,
+      hasPendingInteractions: pendingInteractions > 0,
+      pendingToolCount: 0,
+    }
   }
 
   async sendMessage(sessionId: string, message: MessageInput): Promise<void> {
