@@ -714,7 +714,7 @@ describe("ClaudeCodeEngine", () => {
     await endPromise
   })
 
-  it("drains a message queued mid-turn after the turn result", async () => {
+  it("buffers a mid-turn message in the live channel and consumes it after the turn result", async () => {
     let finishFirstTurn: () => void
     const firstTurnFinished = new Promise<void>((resolve) => { finishFirstTurn = resolve })
     let secondMessageConsumed = false
@@ -745,6 +745,7 @@ describe("ClaudeCodeEngine", () => {
     await engine.sendMessage(session.id, { content: "first" })
     await new Promise((r) => setTimeout(r, 10))
 
+    // Mid-turn message — pushed straight into the SDK channel, buffered until turn 1 ends.
     await engine.sendMessage(session.id, { content: "second" })
     expect(secondMessageConsumed).toBe(false)
 
@@ -756,7 +757,8 @@ describe("ClaudeCodeEngine", () => {
 
     expect(secondMessageConsumed).toBe(true)
     expect(mockQueryFn).toHaveBeenCalledTimes(1)
-    expect(events.filter((e) => e.type === "session.idle")).toHaveLength(1)
+    // Each turn (turn 1 and turn 2 from the buffered message) emits its own idle.
+    expect(events.filter((e) => e.type === "session.idle")).toHaveLength(2)
     expect(await engine.getSessionOutput(session.id)).toEqual({ text: "second", tokens: { input: 1, output: 1 } })
   })
 
