@@ -54,9 +54,11 @@ export interface StageData {
   error: string | null
   startedAt: number
   completedAt: number | null
-  verdict?: "done" | "has_issues" | "stuck"
+  verdict?: "done" | "has_issues" | "stuck" | "partial"
   parentReviewStageId?: string
   dynamicallyInserted?: boolean
+  /** True for stages re-entered via verdict: "partial" — auditable iteration marker. */
+  restartedFromPartial?: boolean
   /** SHA of the commit made after this stage (code-producing stages only) */
   commitSha?: string | null
 }
@@ -81,8 +83,8 @@ export interface PipelineState {
   /** Get the last stage's session ID from the most recently completed pipeline. */
   getLastCompletedSessionId(): string | null
 
-  createStage(opts: { pipelineId: string; stage: string; sessionId?: string; compiledPromptPath?: string; assignedOutputPath?: string; dynamicallyInserted?: boolean; parentReviewStageId?: string }): string
-  completeStage(pipelineId: string, stageId: string, opts?: { outputPath?: string; compiledPromptPath?: string; verdict?: "done" | "has_issues" | "stuck" }): void
+  createStage(opts: { pipelineId: string; stage: string; sessionId?: string; compiledPromptPath?: string; assignedOutputPath?: string; dynamicallyInserted?: boolean; parentReviewStageId?: string; restartedFromPartial?: boolean }): string
+  completeStage(pipelineId: string, stageId: string, opts?: { outputPath?: string; compiledPromptPath?: string; verdict?: "done" | "has_issues" | "stuck" | "partial" }): void
   /** Increment the fix attempt count for a review stage and return the new count. */
   incrementFixAttempt(pipelineId: string, reviewStageId: string): number
   setStageError(pipelineId: string, stageId: string, error: string): void
@@ -343,7 +345,7 @@ export function createPipelineState(workspacePath: string, logger?: Logger): Pip
     return latest?.sessionId ?? null
   }
 
-  function createStage(opts: { pipelineId: string; stage: string; sessionId?: string; compiledPromptPath?: string; assignedOutputPath?: string; dynamicallyInserted?: boolean; parentReviewStageId?: string }): string {
+  function createStage(opts: { pipelineId: string; stage: string; sessionId?: string; compiledPromptPath?: string; assignedOutputPath?: string; dynamicallyInserted?: boolean; parentReviewStageId?: string; restartedFromPartial?: boolean }): string {
     const data = requirePipeline(opts.pipelineId)
     const stageId = crypto.randomUUID()
     const stageData: StageData = {
@@ -361,6 +363,7 @@ export function createPipelineState(workspacePath: string, logger?: Logger): Pip
     }
     if (opts.dynamicallyInserted) stageData.dynamicallyInserted = true
     if (opts.parentReviewStageId) stageData.parentReviewStageId = opts.parentReviewStageId
+    if (opts.restartedFromPartial) stageData.restartedFromPartial = true
     data.stages.push(stageData)
     data.currentStage = opts.stage
     save(data)
@@ -368,7 +371,7 @@ export function createPipelineState(workspacePath: string, logger?: Logger): Pip
     return stageId
   }
 
-  function completeStage(pipelineId: string, stageId: string, opts?: { outputPath?: string; compiledPromptPath?: string; verdict?: "done" | "has_issues" | "stuck" }) {
+  function completeStage(pipelineId: string, stageId: string, opts?: { outputPath?: string; compiledPromptPath?: string; verdict?: "done" | "has_issues" | "stuck" | "partial" }) {
     const data = requirePipeline(pipelineId)
     const stage = requireStage(data, stageId)
     stage.status = "completed"

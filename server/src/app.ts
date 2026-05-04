@@ -98,7 +98,7 @@ export function pickDefaultBackend(registry: BackendRegistry): BackendId {
 
 const VALID_MODES = new Set(["feature", "build", "plan", "bugfix"])
 const VALID_SIGNAL_TYPES = new Set(["stage_complete"])
-const VALID_VERDICTS = new Set(["done", "has_issues", "stuck", "proceed", "skip"])
+const VALID_VERDICTS = new Set(["done", "has_issues", "stuck", "proceed", "skip", "partial"])
 const VALID_PIPELINE_TYPES = new Set(["task", "feature", "epic", "bugfix"])
 const VALID_WORKTREE_CHOICES = new Set(["in-tree", "worktree"])
 const VALID_ACTIONS = new Set(["implement", "done"])

@@ -194,7 +194,7 @@ Start polling now.`
     })
   }
 
-  async runStage(pipelineId: string, stage: string, prompt: string, opts?: { dynamicallyInserted?: boolean; parentReviewStageId?: string }): Promise<void> {
+  async runStage(pipelineId: string, stage: string, prompt: string, opts?: { dynamicallyInserted?: boolean; parentReviewStageId?: string; restartedFromPartial?: boolean }): Promise<void> {
     // Skip establish_conventions on mature codebases (CLAUDE.md already exists)
     if (stage === "establish_conventions") {
       const hasConventions = await this.hasExistingConventions(pipelineId)
@@ -419,9 +419,9 @@ Start polling now.`
     return false
   }
 
-  private registerStage(pipelineId: string, stage: string, session: AgentSession, engine: AgentEngine, opts?: { dynamicallyInserted?: boolean; parentReviewStageId?: string; compiledPromptPath?: string; assignedOutputPath?: string }): string {
+  private registerStage(pipelineId: string, stage: string, session: AgentSession, engine: AgentEngine, opts?: { dynamicallyInserted?: boolean; parentReviewStageId?: string; compiledPromptPath?: string; assignedOutputPath?: string; restartedFromPartial?: boolean }): string {
     const active = this.deps.getPipeline(pipelineId)!
-     const stageId = this.deps.pipelineState.createStage({ pipelineId, stage, sessionId: session.id, dynamicallyInserted: opts?.dynamicallyInserted, parentReviewStageId: opts?.parentReviewStageId, compiledPromptPath: opts?.compiledPromptPath, assignedOutputPath: opts?.assignedOutputPath })
+     const stageId = this.deps.pipelineState.createStage({ pipelineId, stage, sessionId: session.id, dynamicallyInserted: opts?.dynamicallyInserted, parentReviewStageId: opts?.parentReviewStageId, compiledPromptPath: opts?.compiledPromptPath, assignedOutputPath: opts?.assignedOutputPath, restartedFromPartial: opts?.restartedFromPartial })
      active.sessionMap.set(session.id, stageId)
      this.deps.onSessionRegistered({ sessionId: session.id, pipelineId, stageId, stage, assignedOutputPath: opts?.assignedOutputPath })
      active.currentStageId = stageId
@@ -593,7 +593,7 @@ Start polling now.`
     }
   }
 
-  private async runAutonomousStage(pipelineId: string, stage: string, prompt: string, opts?: { dynamicallyInserted?: boolean; parentReviewStageId?: string }): Promise<void> {
+  private async runAutonomousStage(pipelineId: string, stage: string, prompt: string, opts?: { dynamicallyInserted?: boolean; parentReviewStageId?: string; restartedFromPartial?: boolean }): Promise<void> {
     const active = this.deps.getPipeline(pipelineId)!
     let system: string | undefined
 

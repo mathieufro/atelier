@@ -6,7 +6,7 @@ export default tool({
   args: {
     type: tool.schema.enum(["stage_complete"]).describe("Signal type"),
     outputPath: tool.schema.string().describe("Path to output artifact (spec, plan, review, etc.). Required for most stages — write the file first, then signal.").optional(),
-    verdict: tool.schema.enum(["done", "has_issues", "stuck", "proceed", "skip"]).describe("Review verdict or E2E gate decision").optional(),
+    verdict: tool.schema.enum(["done", "has_issues", "stuck", "proceed", "skip", "partial"]).describe("Review verdict, E2E gate decision, or — for implement/e2e — 'partial' to request a fresh-session restart").optional(),
     action: tool.schema.enum(["implement", "done"]).describe("Plan gate action").optional(),
     outcome: tool.schema.enum(["fixed", "fixed_unverified", "inconclusive"]).describe("Bugfix pipeline outcome").optional(),
     pipelineType: tool.schema.enum(["task", "feature", "epic", "bugfix"]).describe("Classification: pipeline type (required for classify stage)").optional(),

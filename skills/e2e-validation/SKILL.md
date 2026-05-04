@@ -102,6 +102,33 @@ Each visual regression test:
 
 **The rule**: if a future developer breaks a UI panel, either the golden diff catches it (fast path) or the LLM catches it (semantic path). Both paths must be exercised.
 
+## Execution Order — Strict
+
+Execute tasks **in the order the E2E plan lists them**:
+1. Infrastructure tasks (typically `EI1`…`EIn`) **before** scenario tasks. Scenarios depend on fixtures — without infrastructure in place, scenario tests cannot run.
+2. Within each group, in plan order — `EI1` before `EI2`, `A1` before `A2`. The plan was reviewed in this order; downstream scenarios assume the upstream ones are wired.
+3. **No prioritization.** Don't skip ahead to "easier" scenarios. Don't batch by theme.
+4. If a scenario is blocked, do not skip to the next one — fix the blocker or signal `verdict: "partial"` (see below).
+
+Track scenario completion in the progress file (`[x] done` per scenario row).
+
+## Partial Completion — Use It Freely
+
+E2E plans are routinely 30+ scenarios. You do not have to fit them all in one session. Signal `verdict: "partial"` and the orchestrator will spawn a fresh session that resumes from the next pending scenario per the progress file.
+
+**Signal partial when:**
+- Context budget approaches ~70% used.
+- You have completed at least one infrastructure task or scenario and the next requires substantial new exploration.
+- A scenario's diagnostic loop (Strobe traces, screenshot review) has consumed a lot of context.
+
+**How:**
+
+1. Update the progress file: `[x] done` for completed scenarios; notes for any `[!] blocked`.
+2. Append `- **E2E (partial):** done EI1, EI2, A1; pending EI3+, A2+ — <reason>` to `## Iteration Log`.
+3. Call `atelier_signal` with `type: "stage_complete"`, `verdict: "partial"`, and `outputPath` set to the absolute path of the progress file. The orchestrator requires `outputPath` on partial signals.
+
+There is no penalty for partial completion. The pipeline is built for this.
+
 ## Step 4: Run and Verify
 
 Run the E2E tests using the host's native test framework or `debug_test` when the framework is supported.
@@ -126,4 +153,4 @@ The pattern is: test fails → Strobe tells you WHY → you fix the code → tes
 - Failures produce actionable diagnostics (not just "timeout")
 - **If the app has UI**: golden samples stored for every visual component/state, dual-path validation wired (golden comparison + LLM fallback), negative assertions included as sanity checks
 
-After completing E2E validation, append to the progress file's `## Iteration Log`: `- **E2E:** <PASS|FAIL> — <one-line summary>`.
+After completing **all** E2E scenarios with all tests passing, append to the progress file's `## Iteration Log`: `- **E2E:** <PASS|FAIL> — <one-line summary>` and call `atelier_signal` with `verdict: "done"`. If you cannot complete in one session, signal `verdict: "partial"` per "Partial Completion" above.

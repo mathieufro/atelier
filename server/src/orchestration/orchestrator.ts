@@ -30,6 +30,9 @@ import * as fs from "node:fs/promises"
 import * as fsSync from "node:fs"
 import * as path from "node:path"
 
+/** Stages where verdict="partial" triggers a same-stage restart with a fresh session. */
+const PARTIAL_RESTART_STAGES = new Set<string>(["implement", "e2e"])
+
 interface OrchestratorConfig {
   engine: AgentEngine
   registry?: BackendRegistry
@@ -892,6 +895,48 @@ export class Orchestrator {
         await this.advanceOrComplete(active.id)
       }
       this.cleanupStageSession(active.id, stageId)
+      return
+    }
+
+    // --- Partial-completion restart (implement & e2e only) ---
+    // Agent signals "I made progress but ran out of session budget — give me a fresh session."
+    // We complete the current stage entry with verdict=partial, kill the old session
+    // synchronously (two agents in the same workspace would race), and re-enter the same stage.
+    // topologyIndex stays put — same trick fixer stages use.
+    if (signal.verdict === "partial" && PARTIAL_RESTART_STAGES.has(stage.stage)) {
+      if (!signal.outputPath) {
+        throw new Error(`verdict=partial requires outputPath (typically the progress file)`)
+      }
+      this.ps.completeStage(active.id, stageId, { outputPath: signal.outputPath, verdict: "partial" })
+      this.emitStageCompleted(active.id, stageId, stage.stage)
+
+      const iteration = this.ps.getPipeline(active.id)?.stages.filter(s => s.stage === stage.stage).length ?? 1
+      this.em.emit({
+        type: "stage_restarted_partial",
+        pipelineId: active.id,
+        stageId,
+        stage: stage.stage,
+        iteration,
+      } as Record<string, unknown>)
+
+      // Synchronous interrupt — a fresh agent in the same workspace cannot tolerate the
+      // old session still writing files. cleanupStageSession would defer the kill 60s.
+      try {
+        const backendId = this.resolveBackendForPipelineSession(signal.sessionId, active)
+        const engine = await this.resolveEngine(backendId)
+        await engine.interruptSession(signal.sessionId)
+        engine.evictSession?.(signal.sessionId)
+      } catch (err) {
+        this.logger.warn("atelier", "stage", "partial_restart_interrupt_failed", { pipelineId: active.id, sessionId: signal.sessionId, error: String(err) })
+      }
+      this.cleanupStageSession(active.id, stageId)
+      // Cancel the 60s deferred kill cleanupStageSession just scheduled — we've already
+      // killed the session synchronously. The timer body short-circuits on missing entry.
+      this.deferredSessionCleanups.delete(signal.sessionId)
+
+      const pipeline = this.ps.getPipeline(active.id)
+      if (!pipeline) return
+      await this.stageRunner.runStage(active.id, stage.stage, pipeline.prompt, { restartedFromPartial: true })
       return
     }
 
