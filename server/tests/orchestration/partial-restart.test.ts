@@ -232,6 +232,30 @@ describe("Orchestrator — verdict: partial restarts implement/e2e stages", () =
     expect(events.some(e => e.type === "stage_started" && e.stage === "review_plan")).toBe(true)
   })
 
+  it("on verdict=partial for fix_code stage: same restart behavior (appends new entry, sets restartedFromPartial)", async () => {
+    const pipelineId = await driveToImplement(orchestrator, engine, events, workspaceDir, pipelineState)
+    await signalStage(orchestrator, events, "implement", { verdict: "done" }, workspaceDir)
+    // review_code with has_issues triggers a fix_code fixer stage
+    await signalStage(orchestrator, events, "review_code", { outputPath: ".atelier/code-review.md", verdict: "has_issues" }, workspaceDir)
+
+    const fixCodeStarted = events.find(e => e.type === "stage_started" && e.stage === "fix_code")!
+    expect(fixCodeStarted).toBeTruthy()
+    fsSync.writeFileSync(path.join(workspaceDir, ".atelier/progress.md"), "# Progress\n")
+
+    await orchestrator.handleSignal({
+      type: "stage_complete",
+      sessionId: fixCodeStarted.sessionId,
+      verdict: "partial",
+      outputPath: ".atelier/progress.md",
+    })
+
+    const fixCodeStages = pipelineState.getPipeline(pipelineId)!.stages.filter(s => s.stage === "fix_code")
+    expect(fixCodeStages).toHaveLength(2)
+    expect(fixCodeStages[0]!.verdict).toBe("partial")
+    expect(fixCodeStages[1]!.restartedFromPartial).toBe(true)
+    expect(engine.interruptedSessions).toContain(fixCodeStarted.sessionId)
+  })
+
   it("rejects verdict=partial when outputPath missing", async () => {
     await driveToImplement(orchestrator, engine, events, workspaceDir, pipelineState)
     const implementStarted = events.find(e => e.type === "stage_started" && e.stage === "implement")!

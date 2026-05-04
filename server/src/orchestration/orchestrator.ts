@@ -30,8 +30,20 @@ import * as fs from "node:fs/promises"
 import * as fsSync from "node:fs"
 import * as path from "node:path"
 
-/** Stages where verdict="partial" triggers a same-stage restart with a fresh session. */
-const PARTIAL_RESTART_STAGES = new Set<string>(["implement", "e2e"])
+/** Stages where verdict="partial" triggers a same-stage restart with a fresh session.
+ *  Covers the heavy "produce work in bulk" stages where lazy-refusal is observed.
+ *  fix_hooks is intentionally excluded — its scope is a single hook error retry. */
+const PARTIAL_RESTART_STAGES = new Set<string>([
+  "implement",
+  "e2e",
+  "fix_code",
+  "fix_plan",
+  "fix_spec",
+  "fix_e2e_plan",
+  "fix_task",
+  "fix_quick_plan",
+  "fix_roadmap",
+])
 
 interface OrchestratorConfig {
   engine: AgentEngine

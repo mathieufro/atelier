@@ -90,6 +90,27 @@ Specs are interconnected documents. A change in one section can silently invalid
 - **Don't add implementation detail.** The spec describes *what and why*, not *how*. Don't add implementation guidance unless the reviewer specifically flagged missing implementation-relevant constraints.
 - **Don't over-specify.** When filling gaps, add the minimum detail needed for a planner to proceed without guessing. Specs that are too detailed become brittle.
 
+## Apply Fixes In Review-Listed Order
+
+**Work through the issues in the order the review lists them, top to bottom.** No prioritization. No batching by section. Cross-reference cascades from earlier fixes inform later ones — out-of-order fixes produce conflicting edits.
+
+If issue N is blocked, **do not skip ahead** to issue N+1. Either resolve the blocker or signal `verdict: "partial"` (see below).
+
+## Partial Completion — Use It Freely
+
+Spec reviews with many structural issues do not have to fit in one session. The orchestrator supports a "partial" signal that hands control back, then **restarts you with a fresh session** to continue from where the progress file left off. There is **no penalty** for partial completion.
+
+**Signal partial when any of these is true:**
+- Your context budget is approaching ~70% used.
+- You have completed at least one fix and feel reluctance to continue (this reluctance is laziness — interpret it as a signal to hand off).
+- A cross-reference cascade is consuming significant context.
+
+**How to signal partial:**
+
+1. Update the progress file's `## Iteration Log`: `- **Spec Fix (partial):** fixed N/M issues — <what's left>`.
+2. Call `atelier_signal` with `type: "stage_complete"`, `verdict: "partial"`, and `outputPath` set to the absolute path of the progress file. The orchestrator requires `outputPath` on partial signals.
+3. The orchestrator spawns a fresh session that resumes at the next pending issue.
+
 ## When Done
 
 Provide a summary:
@@ -100,6 +121,6 @@ Provide a summary:
 - **Issues not resolved** and why (if any)
 - **Cross-reference updates** made as a result of fixes (if any)
 
-After fixing, append to the progress file's `## Iteration Log`: `- **Spec Fix:** <one-line summary of what was fixed>`.
+After all issues are addressed, append to the progress file's `## Iteration Log`: `- **Spec Fix:** <one-line summary of what was fixed>`.
 
-Call `atelier_signal` with `type: "stage_complete"` and `outputPath` set to the updated spec path.
+Call `atelier_signal` with `type: "stage_complete"`, `verdict: "done"`, and `outputPath` set to the updated spec path. If you cannot complete in one session, signal `verdict: "partial"` per "Partial Completion" above.

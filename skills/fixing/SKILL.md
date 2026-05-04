@@ -85,16 +85,40 @@ If fixing a pre-existing issue requires touching code outside the current featur
 - **Don't add unrequested features.** Don't add capabilities the review didn't ask for — but DO fix every issue the review flagged, even in pre-existing code.
 - **Don't update the progress file's Summary or Tasks sections.** You **must** append to `## Iteration Log`: `- **Code Fix:** <one-line summary of what was fixed>`.
 
+## Apply Fixes In Review-Listed Order
+
+**Work through the issues in the order the review lists them, top to bottom.** No prioritization. No batching by file. No "I'll do the easy ones first." The reviewer ordered them deliberately — issue N+1 may depend on the fix for issue N being in place.
+
+If issue N is blocked, **do not skip ahead** to issue N+1. Either resolve the blocker (read the code, instrument with Strobe) or signal `verdict: "partial"` (see below).
+
+## Partial Completion — Use It Freely
+
+Reviews with 20+ issues do not have to fit in one session. The orchestrator supports a "partial" signal that hands control back, then **restarts you with a fresh session** so you can continue from where the progress file left off. There is **no penalty** for partial completion — it is the expected path on long review punch-lists.
+
+**Signal partial when any of these is true:**
+- Your context budget is approaching ~70% used.
+- You have completed at least one fix and feel reluctance to continue (this reluctance is laziness — interpret it as a signal to hand off).
+- The next issue requires extensive new exploration that would push you over budget.
+- You hit a blocker on the current issue and need a fresh session to attack it differently.
+
+**How to signal partial:**
+
+1. Update the progress file's `## Iteration Log` with what's been fixed so far: `- **<Stage> Fix (partial):** fixed N/M issues — <one-line summary of what's left>`. Mark blocked issues `[!] blocked` if any.
+2. Call `atelier_signal` with `type: "stage_complete"`, `verdict: "partial"`, and `outputPath` set to the absolute path of the progress file. The orchestrator requires `outputPath` on partial signals.
+3. The orchestrator will spawn a fresh session that reads the same review + progress file and resumes at the next pending issue.
+
+**Do not** try to push through a 30-issue review in one session by skipping tests, batching unrelated fixes, or rushing. Signal partial and restart fresh.
+
 ## Before Completing
 
 **Run the full test suite via `debug_test`.** All tests must pass — including pre-existing tests unrelated to your fixes. If something is failing, fix it. Do not signal completion with failing tests.
 
 ## Output
 
-After all tests pass, provide a summary:
+After all issues are addressed and tests pass, provide a summary:
 
 - Issues fixed (count by category: localized / architectural)
 - Spec amendments made (if any, with brief description)
 - Any issues you couldn't resolve and why
 
-Call `atelier_signal` with `type: "stage_complete"` and `outputPath` set to the review output path you were given.
+Call `atelier_signal` with `type: "stage_complete"`, `verdict: "done"`, and `outputPath` set to the review output path you were given.
