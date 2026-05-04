@@ -16,7 +16,7 @@ export default tool({
   args: {
     type: tool.schema.enum(["stage_complete"]).describe("Signal type"),
     outputPath: tool.schema.string().describe("Path to output artifact (spec, plan, review, etc.). Required for most stages — write the file first, then signal.").optional(),
-    verdict: tool.schema.enum(["done", "has_issues", "stuck", "proceed", "skip"]).describe("Review verdict or E2E gate decision").optional(),
+    verdict: tool.schema.enum(["done", "has_issues", "stuck", "proceed", "skip", "partial"]).describe("Review verdict, E2E gate decision, or — for implement/e2e/fix_* — 'partial' to request a fresh-session restart").optional(),
     action: tool.schema.enum(["implement", "done"]).describe("Plan gate action").optional(),
     outcome: tool.schema.enum(["fixed", "fixed_unverified", "inconclusive"]).describe("Bugfix pipeline outcome").optional(),
     pipelineType: tool.schema.enum(["task", "feature", "epic", "bugfix"]).describe("Classification: pipeline type (required for classify stage)").optional(),
@@ -116,7 +116,7 @@ server.tool(
   {
     type: z.enum(["stage_complete"]).describe("Signal type"),
     outputPath: z.string().optional().describe("Path to output artifact. Required for most stages — write the file first, then signal."),
-    verdict: z.enum(["done", "has_issues", "stuck", "proceed", "skip"]).optional().describe("Review verdict or E2E gate decision"),
+    verdict: z.enum(["done", "has_issues", "stuck", "proceed", "skip", "partial"]).optional().describe("Review verdict, E2E gate decision, or — for implement/e2e/fix_* — 'partial' to request a fresh-session restart"),
     action: z.enum(["implement", "done"]).optional().describe("Plan gate action"),
     outcome: z.enum(["fixed", "fixed_unverified", "inconclusive"]).optional().describe("Bugfix pipeline outcome"),
     pipelineType: z.enum(["task", "feature", "epic", "bugfix"]).optional().describe("Classification: pipeline type (required for classify stage)"),
