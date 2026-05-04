@@ -8,6 +8,19 @@ stage: implement
 
 You are implementing a plan on a feature branch. Follow the plan exactly — your job is execution, not design.
 
+## ⚠️ IMPORTANT — READ THIS FIRST
+
+**Every task you touch, you finish 100%. No skimming. No shortcuts. No "good enough."**
+
+- A task is **done** when its test is written, run, **observed to fail**, then implementation is written, the test runs **green**, and the full suite passes. Anything less is **not done**.
+- **NEVER** mark a task `[x] done` if you skipped writing the test, skipped running it, skipped a TDD step, or left an LSP error / lint error / type error behind. Half-finished work in the progress file is worse than no work.
+- **NEVER** apply a shortcut "for now" and plan to come back. You will not come back. The next session will trust the progress file.
+- **NEVER** implement multiple tasks at once with a single shared test, or a single combined commit, or a "I'll write tests after" deferment. One task = one full TDD cycle = one verified completion.
+- **NEVER** write a test that doesn't actually exercise the production code path you implemented. A test that passes vacuously (e.g., asserting `true`, asserting on a mock that was never invoked, asserting on the test setup itself) is **not a test** — it's noise. Read your own assertion and ask: "if I deleted my implementation, would this fail?" If no, the test is broken.
+- **`verdict: "partial"` is for between tasks, not within a task.** If you finished 3/10 tasks fully and your context budget is tight, signal partial — that is the correct path. If you started task 4 and got tired, you finish task 4 first, then signal. Never sign off on a task you didn't fully execute.
+
+The lazy failure mode this skill exists to prevent: doing 5 tasks at 60% quality and signaling done. The correct mode: doing 3 tasks at 100% quality and signaling partial. The next session will pick up task 4.
+
 ## Before Starting
 
 - Read the entire plan critically — identify any questions or concerns before touching code

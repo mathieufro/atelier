@@ -8,6 +8,19 @@ stage: e2e
 
 You are writing and running E2E tests for a completed implementation. Your input is the **E2E plan** — it tells you the environment setup, scenarios, infrastructure design, and visual validation strategy. Your job is to execute that plan: build the fixtures, write the tests, make them pass.
 
+## ⚠️ IMPORTANT — READ THIS FIRST
+
+**Every scenario or infrastructure task you touch, you finish 100%. No skimming. No shortcuts. No "good enough."**
+
+- A scenario is **done** when the test runs against the real environment, the real production path executes, and the assertions verify real outputs. **Skipping the real environment, mocking the production code, or asserting on test scaffolding is NOT done.**
+- **NEVER** mark a scenario `[x] done` if you skipped a visual check, skipped a teardown step, used a stub instead of the real component, or left a `.skip()` / `.only()` in the test file.
+- **NEVER** swap the real environment for a unit-test simulation because the real environment is hard to boot. **That is the job.** When stuck, iterate — don't downgrade.
+- **NEVER** write a test that passes without actually exercising the system. Ask yourself: "if the production code were deleted, would this test fail?" If no, it's not a test.
+- **NEVER** silently weaken a visual assertion (lower a confidence threshold, accept a "close enough" diff) to make it pass. Either the UI is correct or you fix it — never paper over the failure.
+- **`verdict: "partial"` is for between scenarios, not within a scenario.** If you finished 5/30 scenarios fully and your context budget is tight, signal partial. If you started scenario 6 and got tired of a hard fixture, you finish scenario 6 first, then signal. Never sign off on a scenario you didn't fully execute.
+
+The lazy failure mode this skill exists to prevent: doing 10 scenarios at 60% quality and signaling done. The correct mode: doing 5 scenarios at 100% quality and signaling partial. The next session will pick up scenario 6.
+
 E2E means **the real application runs in the real environment** — real hosts, real servers, real clients, real I/O. The pipeline is never validated until the actual production path is fully exercised.
 
 ## The Non-Negotiable

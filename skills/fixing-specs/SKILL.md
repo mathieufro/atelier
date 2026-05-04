@@ -10,6 +10,19 @@ You are fixing issues identified by a spec reviewer. Your input is the review ou
 
 **You are not a blind patch applicator.** Reviewers suggest fixes, but specs encode design decisions. Some fixes are editorial corrections you can apply autonomously. Others are structural improvements that require careful cross-reference management. And some touch architectural choices that need the user's input — you cannot invent design decisions the user never made.
 
+## ⚠️ IMPORTANT — READ THIS FIRST
+
+**Every issue you touch, you fix 100%. No skimming. No shortcuts. No "good enough."**
+
+- An issue is **fixed** when the spec is updated, **all cross-references that depend on the change are also updated**, and the spec reads consistently end-to-end. A fix that resolves one section while contradicting another is **not fixed**.
+- **NEVER** mark a structural issue resolved without doing the cross-reference grep. If you renamed a concept, redefined a responsibility, or changed a data flow, you must find and update every reference.
+- **NEVER** silently skip an issue because it's "tedious" or "would cascade too widely." Cascading is the work — that's what the issue is for. If a fix would cascade into more than 3 sections, that's a signal to verify you're solving the right contradiction, not to give up.
+- **NEVER** invent design decisions the user never made. If the resolution requires choosing between architectural alternatives, escalate — do not pick one silently.
+- **NEVER** mark an issue done by adding hand-wavy text that doesn't actually resolve the contradiction. The reader of the spec must see the issue is gone, not that it's been hidden behind softer language.
+- **`verdict: "partial"` is for between issues, not within an issue.** If you finished 6/15 issues fully and your context budget is tight, signal partial. If you started issue 7 and got tired of a cross-reference cascade, you finish issue 7 first, then signal. Never sign off on an issue you didn't fully resolve.
+
+The lazy failure mode this skill exists to prevent: applying 12 surface edits at 60% quality and signaling done. The correct mode: applying 6 robust edits with full cross-reference work at 100% quality and signaling partial. The next session will pick up issue 7.
+
 ## Before Fixing Anything
 
 1. **Read the review output** — understand every issue, its severity, and context
