@@ -39,6 +39,7 @@ function createMockOrchestrator(overrides?: Partial<Record<string, any>>) {
     abortStageSession: vi.fn(async () => {}),
     resumeStageSession: vi.fn(async () => {}),
     clearInterruptAndRoute: vi.fn(async () => {}),
+    routeStageMessage: vi.fn(async () => {}),
     handleSignal: vi.fn(async () => {}),
     handleStuckRetry: vi.fn(async () => {}),
     failPipeline: vi.fn(),
@@ -251,7 +252,7 @@ describe("Test routes", () => {
       expect(proxy.sendMessage).not.toHaveBeenCalled()
     })
 
-    it("uses sendMessage for non-interrupted pipeline session", async () => {
+    it("uses routeStageMessage for non-interrupted pipeline session", async () => {
       const orch = createMockOrchestrator({
         isSessionOwnedByPipeline: vi.fn(() => true),
         findPipelineIdBySession: vi.fn(() => "p1"),
@@ -267,7 +268,8 @@ describe("Test routes", () => {
       })
       expect(res.status).toBe(200)
       await new Promise(r => setTimeout(r, 10))
-      expect(proxy.sendMessage).toHaveBeenCalledWith("s1", expect.objectContaining({ content: "hello" }))
+      expect(orch.routeStageMessage).toHaveBeenCalledWith("s1", "hello", expect.any(Object))
+      expect(proxy.sendMessage).not.toHaveBeenCalled()
       expect(orch.clearInterruptAndRoute).not.toHaveBeenCalled()
     })
 
@@ -288,7 +290,7 @@ describe("Test routes", () => {
       expect(orch.clearInterruptAndRoute).not.toHaveBeenCalled()
     })
 
-    it("uses sendMessage when session is pipeline-owned but not active stage", async () => {
+    it("uses routeStageMessage when session is pipeline-owned but not active stage", async () => {
       const orch = createMockOrchestrator({
         isSessionOwnedByPipeline: vi.fn(() => true),
         findPipelineIdBySession: vi.fn(() => "p1"),
@@ -304,7 +306,8 @@ describe("Test routes", () => {
       })
       expect(res.status).toBe(200)
       await new Promise(r => setTimeout(r, 10))
-      expect(proxy.sendMessage).toHaveBeenCalled()
+      expect(orch.routeStageMessage).toHaveBeenCalledWith("s1", "hello", expect.any(Object))
+      expect(proxy.sendMessage).not.toHaveBeenCalled()
       expect(orch.clearInterruptAndRoute).not.toHaveBeenCalled()
     })
   })

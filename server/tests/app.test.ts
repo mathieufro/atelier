@@ -425,8 +425,8 @@ describe("POST /message routing", () => {
       getActiveStageSessionId: (_id: string) => "brainstorm-sess",
       isStageInterrupted: (_id: string) => false,
       isSessionOwnedByPipeline: () => false,
+      routeStageMessage: async (sessionId: string) => { routedToSession = sessionId },
     }
-    vi.mocked(getProxy(opts).sendMessage).mockImplementation(async (sessionId: string) => { routedToSession = sessionId })
     const app = createApp({ ...opts, getOrchestrator: () => orchestrator as any })
     const res = await app.request("/message", {
       method: "POST",
@@ -434,7 +434,7 @@ describe("POST /message routing", () => {
       body: JSON.stringify({ content: "Add OAuth support", mode: "feature", pipelineId: "p1" }),
     })
     expect(res.status).toBe(200)
-    // sendMessage is fire-and-forget via getProxyForSession — give it a tick
+    // routeStageMessage is fire-and-forget — give it a tick
     await new Promise(r => setTimeout(r, 10))
     expect(routedToSession).toBe("brainstorm-sess")
   })
@@ -449,11 +449,11 @@ describe("POST /message routing", () => {
       rehydrateFromDisk: async (id: string) => { rehydratedId = id; return true },
       getActiveStageSessionId: () => "brainstorm-sess-123",
       isStageInterrupted: () => false,
+      routeStageMessage: async (sessionId: string) => { routedToSession = sessionId },
     }
     const opts = createTestAppOptions({
       getOrchestrator: () => orchestrator as any,
     })
-    vi.mocked(getProxy(opts).sendMessage).mockImplementation(async (sessionId: string) => { routedToSession = sessionId })
     const app = createApp(opts)
 
     const res = await app.request("/message", {
@@ -466,7 +466,7 @@ describe("POST /message routing", () => {
     expect(body.ok).toBe(true)
     expect(body.pipelineId).toBe("p-idle")
     expect(rehydratedId).toBe("p-idle")
-    // sendMessage is fire-and-forget — give it a tick
+    // routeStageMessage is fire-and-forget — give it a tick
     await new Promise(r => setTimeout(r, 10))
     expect(routedToSession).toBe("brainstorm-sess-123")
   })
