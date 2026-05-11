@@ -35,9 +35,25 @@ function getPathKey(entry: string): string {
 
 function expandWindowsEnvVars(value: string, env: NodeJS.ProcessEnv): string {
   return value.replace(/%([^%]+)%/g, (_match, name: string) => {
-    const key = Object.keys(env).find((candidate) => candidate.toLowerCase() === name.toLowerCase())
-    return key ? (env[key] ?? "") : `%${name}%`
+    return readWindowsEnv(env, name) ?? `%${name}%`
   })
+}
+
+// Windows env var names are case-insensitive in the OS, but a spread copy
+// (`{ ...process.env }`) loses that proxy and becomes a plain object — so the
+// stored casing matters. Real Node sees mixed-case keys ("ProgramData"), but
+// vitest's forks pool normalizes to all-caps. Read mixed-case Windows vars
+// through this helper so production works in both shapes. The case-insensitive
+// scan is gated on Windows because POSIX env vars are case-sensitive.
+function readWindowsEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const direct = env[name]
+  if (direct !== undefined) return direct
+  if (process.platform !== "win32") return undefined
+  const lower = name.toLowerCase()
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === lower) return env[key]
+  }
+  return undefined
 }
 
 function appendUniquePath(parts: string[], seen: Set<string>, entry: string): void {
@@ -66,7 +82,7 @@ function parsePathEntries(raw: string): string[] {
 }
 
 function getWindowsCorePathDirs(env: NodeJS.ProcessEnv): string[] {
-  const systemRoot = env.SystemRoot ?? "C:\\Windows"
+  const systemRoot = readWindowsEnv(env, "SystemRoot") ?? "C:\\Windows"
   return [
     path.join(systemRoot, "System32"),
     systemRoot,
@@ -76,7 +92,7 @@ function getWindowsCorePathDirs(env: NodeJS.ProcessEnv): string[] {
 }
 
 function readWindowsRegistryPath(key: string, env: NodeJS.ProcessEnv): string[] {
-  const regExe = path.join(env.SystemRoot ?? "C:\\Windows", "System32", "reg.exe")
+  const regExe = path.join(readWindowsEnv(env, "SystemRoot") ?? "C:\\Windows", "System32", "reg.exe")
   try {
     const result = spawnSyncRunner(regExe, ["query", key, "/v", "Path"], {
       encoding: "utf8",
@@ -115,13 +131,18 @@ function getRuntimeSearchDirs(env: NodeJS.ProcessEnv): string[] {
     path.join(os.homedir(), ".bun", "bin"),
     path.join(os.homedir(), ".local", "bin"),
   ]
-  if (env.BUN_INSTALL) extra.push(path.join(env.BUN_INSTALL, "bin"))
+  const bunInstall = readWindowsEnv(env, "BUN_INSTALL")
+  if (bunInstall) extra.push(path.join(bunInstall, "bin"))
   if (process.platform === "win32") {
-    extra.push(path.join(env.LOCALAPPDATA ?? "", "bun"))
-    extra.push(path.join(env.ProgramData ?? "C:\\ProgramData", "chocolatey", "bin"))
-    extra.push(path.join(env.USERPROFILE ?? os.homedir(), "scoop", "persist", "bun", "bin"))
-    extra.push(path.join(env.USERPROFILE ?? os.homedir(), "scoop", "shims"))
-    extra.push(path.join(env.APPDATA ?? "", "npm"))
+    const localAppData = readWindowsEnv(env, "LOCALAPPDATA") ?? ""
+    const programData = readWindowsEnv(env, "ProgramData") ?? "C:\\ProgramData"
+    const userProfile = readWindowsEnv(env, "USERPROFILE") ?? os.homedir()
+    const appData = readWindowsEnv(env, "APPDATA") ?? ""
+    extra.push(path.join(localAppData, "bun"))
+    extra.push(path.join(programData, "chocolatey", "bin"))
+    extra.push(path.join(userProfile, "scoop", "persist", "bun", "bin"))
+    extra.push(path.join(userProfile, "scoop", "shims"))
+    extra.push(path.join(appData, "npm"))
   } else {
     if (env.HOMEBREW_PREFIX) extra.push(path.join(env.HOMEBREW_PREFIX, "bin"))
     extra.push("/usr/local/bin", "/opt/homebrew/bin")
