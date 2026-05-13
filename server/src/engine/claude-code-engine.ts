@@ -22,6 +22,22 @@ function linkOrCopy(source: string, target: string): void {
 }
 
 /**
+ * Return process.env with any Anthropic auth env vars stripped.
+ *
+ * The Claude Agent SDK auto-picks `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`
+ * from its env, which bypasses the user's `claude login` OAuth credentials
+ * (e.g. Claude Max subscription). If another project the user works on sets
+ * `ANTHROPIC_API_KEY` (in a `.env`, `.envrc`, shell profile, etc.) and that
+ * env leaks into VS Code, Atelier would silently bill against that API key
+ * instead of the Max OAuth token. Stripping these vars forces the SDK to
+ * fall back to the keychain-stored OAuth credentials.
+ */
+function claudeAuthEnv(): NodeJS.ProcessEnv {
+  const { ANTHROPIC_API_KEY: _apiKey, ANTHROPIC_AUTH_TOKEN: _authToken, ...rest } = process.env
+  return rest
+}
+
+/**
  * Map variant string to maxThinkingTokens for the Claude Agent SDK.
  * The SDK has no "effort" option — it only supports maxThinkingTokens.
  * Returns undefined to use model defaults (no thinking cap).
@@ -273,7 +289,7 @@ export class ClaudeCodeEngine implements AgentEngine {
         settingSources: ["user", "project", "local"],
         includePartialMessages: true,
         abortController,
-        env: { ...process.env, CLAUDE_CODE_MAX_OUTPUT_TOKENS: "128000" },
+        env: { ...claudeAuthEnv(), CLAUDE_CODE_MAX_OUTPUT_TOKENS: "128000" },
       }
 
       if (!isAutonomous) {
@@ -832,7 +848,7 @@ export class ClaudeCodeEngine implements AgentEngine {
       settingSources: ["user", "project", "local"],
       includePartialMessages: true,
       abortController,
-      env: { ...process.env, CLAUDE_CODE_MAX_OUTPUT_TOKENS: "128000" },
+      env: { ...claudeAuthEnv(), CLAUDE_CODE_MAX_OUTPUT_TOKENS: "128000" },
       canUseTool: (toolName: string, input: unknown, toolOptions?: { toolUseID?: string; signal?: AbortSignal }) => {
         // Backfill tool input (same as main canUseTool — see comment there)
         if (toolOptions?.toolUseID) {
@@ -1236,7 +1252,7 @@ export class ClaudeCodeEngine implements AgentEngine {
         cwd: path.dirname(helperPath),
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
-        env: process.env,
+        env: claudeAuthEnv(),
       })
 
       let stdout = ""
