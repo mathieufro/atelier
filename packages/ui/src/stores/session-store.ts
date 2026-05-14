@@ -7,6 +7,7 @@ interface SessionStoreState {
   byId: Record<string, Session>
   statuses: Record<string, AtelierSessionStatus>
   interrupted: Record<string, boolean>
+  compacting: Record<string, boolean>
 }
 
 export function createSessionStore() {
@@ -14,6 +15,7 @@ export function createSessionStore() {
     byId: {},
     statuses: {},
     interrupted: {},
+    compacting: {},
   })
   const [activeSessionId, setActiveSessionId] = createSignal<string | null>(null)
 
@@ -36,6 +38,10 @@ export function createSessionStore() {
 
   function isInterrupted(sessionId: string): boolean {
     return state.interrupted[sessionId] ?? false
+  }
+
+  function isCompacting(sessionId: string): boolean {
+    return state.compacting[sessionId] ?? false
   }
 
   function handleEvent(event: OpenCodeForwardedEvent) {
@@ -95,6 +101,13 @@ export function createSessionStore() {
           setState("statuses", event.properties.sessionID, reconcile({ type: "idle" as const }))
         }
         break
+      case "session.next.compaction.started":
+        setState("compacting", event.properties.sessionID, true)
+        break
+      case "session.next.compaction.ended":
+      case "session.compacted":
+        setState("compacting", event.properties.sessionID, false)
+        break
     }
   }
 
@@ -120,6 +133,7 @@ export function createSessionStore() {
     removeSession,
     getStatus,
     isInterrupted,
+    isCompacting,
     handleEvent,
   }
 }

@@ -251,6 +251,43 @@ describe("SessionStore", () => {
     })
   })
 
+  it("sets isCompacting on session.next.compaction.started and clears on ended", () => {
+    createRoot((dispose) => {
+      const store = createSessionStore()
+      store.loadSessions([makeSession("s1")])
+      expect(store.isCompacting("s1")).toBe(false)
+      store.handleEvent({
+        type: "session.next.compaction.started",
+        properties: { sessionID: "s1", timestamp: Date.now(), reason: "auto" },
+      } as any)
+      expect(store.isCompacting("s1")).toBe(true)
+      store.handleEvent({
+        type: "session.next.compaction.ended",
+        properties: { sessionID: "s1", timestamp: Date.now(), text: "summary" },
+      } as any)
+      expect(store.isCompacting("s1")).toBe(false)
+      dispose()
+    })
+  })
+
+  it("clears isCompacting on session.compacted", () => {
+    createRoot((dispose) => {
+      const store = createSessionStore()
+      store.loadSessions([makeSession("s1")])
+      store.handleEvent({
+        type: "session.next.compaction.started",
+        properties: { sessionID: "s1", timestamp: Date.now(), reason: "manual" },
+      } as any)
+      expect(store.isCompacting("s1")).toBe(true)
+      store.handleEvent({
+        type: "session.compacted",
+        properties: { sessionID: "s1" },
+      } as any)
+      expect(store.isCompacting("s1")).toBe(false)
+      dispose()
+    })
+  })
+
   it("ignores unknown event types", () => {
     createRoot((dispose) => {
       const store = createSessionStore()

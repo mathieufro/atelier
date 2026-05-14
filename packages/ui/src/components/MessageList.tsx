@@ -61,6 +61,10 @@ export function MessageList(props: {
     const id = resolvedSessionId()
     return id ? sessionStore.getStatus(id).type === "stalled" : false
   }
+  const isCompacting = () => {
+    const id = resolvedSessionId()
+    return id ? sessionStore.isCompacting(id) : false
+  }
 
   // True when busy but the last entry is still a user message (assistant hasn't replied yet).
   // This happens with backends that don't emit message.created immediately (e.g. Claude).
@@ -129,6 +133,7 @@ export function MessageList(props: {
                         onFileClick={props.onFileClick}
                         isStreaming={isLast() && isBusy()}
                         isStalled={isLast() && isStalled()}
+                        isCompacting={isLast() && isCompacting()}
                         interrupted={isInterruptedMessage(entry.message)}
                       />
                     }
@@ -155,7 +160,7 @@ export function MessageList(props: {
           )
         })()}
         <Show when={showPendingPlaceholder()}>
-          <AssistantMessageView parts={[]} isStreaming={true} />
+          <AssistantMessageView parts={[]} isStreaming={true} isCompacting={isCompacting()} />
         </Show>
       </Show>
       {/* Orphan completed questions (no tool.messageID) — outside loading guard */}

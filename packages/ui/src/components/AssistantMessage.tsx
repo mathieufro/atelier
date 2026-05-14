@@ -50,6 +50,7 @@ export function AssistantMessageView(props: {
   onFileClick?: (path: string, line?: number) => void
   isStreaming?: boolean
   isStalled?: boolean
+  isCompacting?: boolean
   interrupted?: boolean
 }) {
   // Find visible parts to determine which is last (for streaming pulse)
@@ -84,7 +85,9 @@ export function AssistantMessageView(props: {
     <div class="mb-4 space-y-2">
       <Show when={showPlaceholder() && !props.interrupted}>
         <PartRow dot="bg-vsc-description-fg animate-pulse">
-          <span class="text-sm text-vsc-description-fg italic">Generating<span class="dots" /></span>
+          <span class="text-sm text-vsc-description-fg italic">
+            {props.isCompacting ? "Compacting" : "Generating"}<span class="dots" />
+          </span>
         </PartRow>
       </Show>
       <For each={visibleParts()}>
@@ -141,7 +144,7 @@ export function AssistantMessageView(props: {
       <Show when={trailingStatus()}>
         <PartRow dot="bg-vsc-description-fg animate-pulse">
           <span class="text-sm text-vsc-description-fg italic">
-            {trailingStatus() === "working" ? "Working" : "Generating"}<span class="dots" />
+            {props.isCompacting ? "Compacting" : trailingStatus() === "working" ? "Working" : "Generating"}<span class="dots" />
           </span>
         </PartRow>
       </Show>
