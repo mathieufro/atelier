@@ -24,6 +24,6 @@
     "./process-platform": "./src/process-platform.ts"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "^1.2.10"
+    "@opencode-ai/sdk": "^1.14.50"
   }
 }

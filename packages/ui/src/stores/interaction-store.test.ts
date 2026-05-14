@@ -22,6 +22,7 @@ describe("InteractionStore", () => {
       const store = createInteractionStore()
       store.handleEvent({
         type: "permission.asked",
+        id: "evt-perm1",
         properties: {
           id: "perm1",
           sessionID: "s1",
@@ -41,6 +42,7 @@ describe("InteractionStore", () => {
       const store = createInteractionStore()
       store.handleEvent({
         type: "permission.asked",
+        id: "evt-perm1",
         properties: {
           id: "perm1",
           sessionID: "s1",
@@ -223,6 +225,7 @@ describe("InteractionStore", () => {
       const store = createInteractionStore()
       store.handleEvent({
         type: "permission.asked",
+        id: "evt-perm1",
         properties: {
           id: "perm1",
           sessionID: "s1",
@@ -234,6 +237,7 @@ describe("InteractionStore", () => {
       } as Event)
       store.handleEvent({
         type: "permission.asked",
+        id: "evt-perm2",
         properties: {
           id: "perm2",
           sessionID: "s1",
@@ -273,6 +277,7 @@ describe("InteractionStore", () => {
       const store = createInteractionStore()
       store.handleEvent({
         type: "permission.asked",
+        id: "evt-perm1-s2",
         properties: {
           id: "perm1",
           sessionID: "s2",

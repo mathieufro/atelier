@@ -20,11 +20,11 @@ describe("OpenCodeProxy", () => {
 
   it("sendMessage forwards content and params to SDK", async () => {
     const mockSdk = {
-      session: { prompt: vi.fn(async () => {}) },
+      session: { promptAsync: vi.fn(async () => {}) },
     }
     const proxy = createOpenCodeProxy(mockSdk as any, new Set())
     await proxy.sendMessage("s1", { content: "hello" })
-    expect(mockSdk.session.prompt).toHaveBeenCalledWith(
+    expect(mockSdk.session.promptAsync).toHaveBeenCalledWith(
       expect.objectContaining({ sessionID: "s1" }),
     )
   })
@@ -194,7 +194,7 @@ describe("OpenCodeProxy", () => {
 describe("OpenCodeProxy BackendProxy conformance", () => {
   it("implements BackendProxy interface", () => {
     const mockClient = {
-      session: { list: vi.fn(), create: vi.fn(), get: vi.fn(), delete: vi.fn(), abort: vi.fn(), messages: vi.fn(), prompt: vi.fn(), update: vi.fn() },
+      session: { list: vi.fn(), create: vi.fn(), get: vi.fn(), delete: vi.fn(), abort: vi.fn(), messages: vi.fn(), promptAsync: vi.fn(), update: vi.fn() },
       config: { get: vi.fn() },
       provider: { list: vi.fn() },
       permission: { reply: vi.fn(), list: vi.fn() },

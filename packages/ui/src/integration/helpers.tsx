@@ -278,6 +278,7 @@ export function partDeltaEvent(sessionID: string, messageID: string, partID: str
 export function permissionAskedEvent(id: string, permission = "bash"): HostMessage {
   return wrapEvent({
     type: "permission.asked",
+    id: `evt-${id}`,
     properties: { id, sessionID: "s1", permission, patterns: [], metadata: {}, always: [] },
   } as Event)
 }

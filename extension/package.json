@@ -97,6 +97,6 @@
   },
   "dependencies": {
     "@atelier/core": "workspace:*",
-    "@opencode-ai/sdk": "^1.2.10"
+    "@opencode-ai/sdk": "^1.14.50"
   }
 }

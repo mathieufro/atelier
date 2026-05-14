@@ -16,7 +16,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.2.119",
     "@atelier/core": "workspace:*",
-    "@opencode-ai/sdk": "^1.2.10",
+    "@opencode-ai/sdk": "^1.14.50",
     "@anthropic-ai/sdk": "^0.40.0",
     "hono": "^4.0.0"
   }

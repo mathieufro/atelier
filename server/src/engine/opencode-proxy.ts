@@ -84,13 +84,15 @@ export function createOpenCodeProxy(
           parts.push({ type: "file", mime: att.mime, url: att.url, filename: att.filename })
         }
       }
-      await client.session.prompt({
+      // promptAsync returns once opencode accepts the message; response content streams
+      // back via the separate global SSE event subscription, not this HTTP call.
+      await client.session.promptAsync({
         sessionID: sessionId,
-        parts: parts as Parameters<typeof client.session.prompt>[0]["parts"],
+        parts: parts as Parameters<typeof client.session.promptAsync>[0]["parts"],
         model,
         variant,
         system,
-      } as Parameters<typeof client.session.prompt>[0])
+      } as Parameters<typeof client.session.promptAsync>[0])
     },
 
     async getConfig() {

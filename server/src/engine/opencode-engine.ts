@@ -363,9 +363,14 @@ export class OpenCodeEngine implements AgentEngine {
       }
     }
 
-    const res = await this.client.session.prompt({
+    // Use promptAsync so the HTTP call returns as soon as opencode accepts the message.
+    // The streaming `prompt` variant holds the connection open for the full model response,
+    // which means a stalled model leaves this await hanging indefinitely. All response
+    // content arrives separately through the global SSE event stream subscribed in
+    // subscribeToEvents(), so we don't need the streaming body.
+    const res = await this.client.session.promptAsync({
       sessionID: sessionId,
-      parts: parts as Parameters<typeof this.client.session.prompt>[0]["parts"],
+      parts: parts as Parameters<typeof this.client.session.promptAsync>[0]["parts"],
       system,
       model: message.model,
       variant: message.variant,

@@ -26,7 +26,7 @@ describe("OpenCodeEngine module", () => {
 const mockClient = {
   session: {
     create: vi.fn().mockResolvedValue({ data: { id: "sess-1" } }),
-    prompt: vi.fn().mockResolvedValue(undefined),
+    promptAsync: vi.fn().mockResolvedValue(undefined),
     messages: vi.fn().mockResolvedValue({ data: [] }),
     abort: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(undefined),
@@ -83,8 +83,8 @@ describe("OpenCodeEngine behavioral tests", () => {
     it("builds parts array with text part", async () => {
       await engine.sendMessage("sess-1", { content: "Hello agent" })
 
-      expect(mockClient.session.prompt).toHaveBeenCalledOnce()
-      expect(mockClient.session.prompt).toHaveBeenCalledWith({
+      expect(mockClient.session.promptAsync).toHaveBeenCalledOnce()
+      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
         sessionID: "sess-1",
         parts: [{ type: "text", text: "Hello agent" }],
         system: undefined,
@@ -99,7 +99,7 @@ describe("OpenCodeEngine behavioral tests", () => {
         ],
       })
 
-      const call = mockClient.session.prompt.mock.calls[0][0]
+      const call = mockClient.session.promptAsync.mock.calls[0][0]
       expect(call.parts).toHaveLength(2)
       expect(call.parts[0]).toEqual({ type: "text", text: "Check this file" })
       expect(call.parts[1]).toEqual({ type: "file", mime: "text/plain", url: "file:///tmp/a.txt", filename: "a.txt" })
@@ -111,7 +111,7 @@ describe("OpenCodeEngine behavioral tests", () => {
         system: "You are a helpful assistant",
       })
 
-      expect(mockClient.session.prompt).toHaveBeenCalledWith({
+      expect(mockClient.session.promptAsync).toHaveBeenCalledWith({
         sessionID: "sess-1",
         parts: [{ type: "text", text: "Do the thing" }],
         system: "You are a helpful assistant",
@@ -119,7 +119,7 @@ describe("OpenCodeEngine behavioral tests", () => {
     })
 
     it("throws SDK error responses so missing sessions can be recovered by callers", async () => {
-      mockClient.session.prompt.mockResolvedValueOnce({ error: { message: "Session sess-1 not found" } })
+      mockClient.session.promptAsync.mockResolvedValueOnce({ error: { message: "Session sess-1 not found" } })
 
       await expect(engine.sendMessage("sess-1", { content: "hello" })).rejects.toThrow(/Session sess-1 not found/)
     })

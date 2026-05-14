@@ -127,7 +127,7 @@ function AppInner(props: AppProps) {
             }
           }
           if (event.type === "stage_interrupted") {
-            sessionStore.handleEvent({ type: "session.idle", properties: { sessionID: event.sessionId } })
+            sessionStore.handleEvent({ type: "session.idle", id: `synthetic-idle-${event.sessionId}`, properties: { sessionID: event.sessionId } })
           }
         } else if (event.type === "connection_lost") {
           setConnection("reconnecting")
@@ -227,7 +227,8 @@ function AppInner(props: AppProps) {
         setSelectedModel(key)
         setCommittedModel(key)
       }
-      setSelectedVariant(m.variant)
+      // UserMessage stores variant inside model (SDK v1.14+), AssistantMessage keeps it top-level.
+      setSelectedVariant(m.role === "user" ? m.model?.variant : m.variant)
       return
     }
   }
