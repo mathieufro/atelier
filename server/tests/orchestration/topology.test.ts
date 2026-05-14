@@ -227,7 +227,7 @@ describe("Topology definitions", () => {
 
   describe("STAGE_SKILLS E2E mappings (Task 4)", () => {
     it("maps all 5 E2E stages", () => {
-      expect(STAGE_SKILLS["compile_e2e_plan"]).toBe("compiling")
+      expect(STAGE_SKILLS["compile_e2e_plan"]).toBe("compiling-plan")
       expect(STAGE_SKILLS["write_e2e_plan"]).toBe("writing-e2e-plans")
       expect(STAGE_SKILLS["review_e2e_plan"]).toBe("reviewing-e2e-plans")
       expect(STAGE_SKILLS["fix_e2e_plan"]).toBe("fixing")
@@ -429,7 +429,7 @@ describe("Topology definitions", () => {
 
   describe("STAGE_SKILLS (Phase 7)", () => {
     it("maps all new Phase 7 stages to correct skill directories", () => {
-      expect(STAGE_SKILLS["compile_task_brainstorm"]).toBe("compiling")
+      expect(STAGE_SKILLS["compile_task_brainstorm"]).toBe("compiling-brainstorm")
       expect(STAGE_SKILLS["task_brainstorm"]).toBe("task-brainstorming")
       expect(STAGE_SKILLS["review_task"]).toBe("reviewing-task-plans")
       expect(STAGE_SKILLS["fix_task"]).toBe("fixing")

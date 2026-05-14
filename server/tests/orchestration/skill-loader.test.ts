@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { loadSkill, loadSkillCatalog, STAGE_SKILLS, SIGNAL_FOOTER } from "../../src/orchestration/skill-loader.js"
+import { loadSkill, loadSkillCatalog, resolveSkillForStage, STAGE_SKILLS, SIGNAL_FOOTER } from "../../src/orchestration/skill-loader.js"
 import * as path from "node:path"
 import * as fs from "node:fs"
 import * as os from "node:os"
@@ -7,22 +7,21 @@ import * as os from "node:os"
 const SKILLS_DIR = path.resolve(import.meta.dirname, "../../../skills")
 
 describe("loadSkill", () => {
-  it("loads brainstorming skill from disk", async () => {
-    const content = await loadSkill("brainstorming", SKILLS_DIR)
-    expect(content).toContain("# Brainstorming")
-    expect(content).toContain("You are guiding a brainstorm session")
+  it("loads brainstorming-feature skill from disk", async () => {
+    const content = await loadSkill("brainstorming-feature", SKILLS_DIR)
+    expect(content).toContain("# Feature Brainstorming")
   })
 
-  it("loads compiling skill from disk", async () => {
-    const content = await loadSkill("compiling", SKILLS_DIR)
+  it("loads compiling-plan skill from disk", async () => {
+    const content = await loadSkill("compiling-plan", SKILLS_DIR)
     expect(content).toContain("# Compiling")
   })
 
   it("strips YAML frontmatter", async () => {
-    const content = await loadSkill("brainstorming", SKILLS_DIR)
+    const content = await loadSkill("brainstorming-feature", SKILLS_DIR)
     expect(content).not.toMatch(/^---\n/)
     expect(content).not.toContain("stage: brainstorm")
-    expect(content).toContain("# Brainstorming")
+    expect(content).toContain("# Feature Brainstorming")
   })
 
   it("throws for non-existent skill", async () => {
@@ -70,14 +69,14 @@ describe("loadSkillCatalog", () => {
   it("includes known skills", async () => {
     const catalog = await loadSkillCatalog(SKILLS_DIR)
     const names = catalog.map((s) => s.name)
-    expect(names).toContain("brainstorming")
+    expect(names).toContain("brainstorming-feature")
     expect(names).toContain("implementing-plans")
     expect(names).toContain("bugfixing")
   })
 
-  it("returns correct metadata for brainstorming skill", async () => {
+  it("returns correct metadata for brainstorming-feature skill", async () => {
     const catalog = await loadSkillCatalog(SKILLS_DIR)
-    const brainstorm = catalog.find((s) => s.name === "brainstorming")
+    const brainstorm = catalog.find((s) => s.name === "brainstorming-feature")
     expect(brainstorm).toBeDefined()
     expect(brainstorm!.stage).toBe("brainstorm")
     expect(brainstorm!.description).toContain("brainstorm")
@@ -117,9 +116,8 @@ describe("loadSkillCatalog", () => {
 
 describe("STAGE_SKILLS", () => {
   it("maps original pipeline stages to skill names", () => {
-    expect(STAGE_SKILLS.compile_brainstorm).toBe("compiling")
-    expect(STAGE_SKILLS.brainstorm).toBe("brainstorming")
-    expect(STAGE_SKILLS.compile_plan).toBe("compiling")
+    expect(STAGE_SKILLS.compile_brainstorm).toBe("compiling-brainstorm")
+    expect(STAGE_SKILLS.compile_plan).toBe("compiling-plan")
     expect(STAGE_SKILLS.write_plan).toBe("writing-plans")
     expect(STAGE_SKILLS.implement).toBe("implementing-plans")
   })
@@ -133,5 +131,116 @@ describe("STAGE_SKILLS", () => {
     expect(STAGE_SKILLS["review_code"]).toBe("reviewing-implementation")
     expect(STAGE_SKILLS["fix_code"]).toBe("fixing")
     expect(STAGE_SKILLS["simplify"]).toBe("simplifying-implementation")
+  })
+
+  it("does not include polymorphic brainstorm stages (use resolveSkillForStage)", () => {
+    expect(STAGE_SKILLS.brainstorm).toBeUndefined()
+    expect(STAGE_SKILLS.brainstorm_roadmap).toBeUndefined()
+  })
+
+  it("maps compile stages to the new split compile skills", () => {
+    expect(STAGE_SKILLS.compile_brainstorm).toBe("compiling-brainstorm")
+    expect(STAGE_SKILLS.compile_roadmap_brainstorm).toBe("compiling-brainstorm")
+    expect(STAGE_SKILLS.compile_task_brainstorm).toBe("compiling-brainstorm")
+    expect(STAGE_SKILLS.compile_plan).toBe("compiling-plan")
+    expect(STAGE_SKILLS.compile_e2e_plan).toBe("compiling-plan")
+  })
+})
+
+describe("resolveSkillForStage", () => {
+  it("resolves brainstorm to brainstorming-feature for feature pipelines", () => {
+    expect(resolveSkillForStage("brainstorm", "feature")).toBe("brainstorming-feature")
+  })
+
+  it("resolves brainstorm to brainstorming-epic for epic pipelines", () => {
+    expect(resolveSkillForStage("brainstorm", "epic")).toBe("brainstorming-epic")
+  })
+
+  it("resolves brainstorm_roadmap to brainstorming-roadmap regardless of pipelineType", () => {
+    expect(resolveSkillForStage("brainstorm_roadmap", "epic")).toBe("brainstorming-roadmap")
+    expect(resolveSkillForStage("brainstorm_roadmap", "feature")).toBe("brainstorming-roadmap")
+  })
+
+  it("falls through to STAGE_SKILLS for non-brainstorm stages", () => {
+    expect(resolveSkillForStage("write_plan", "feature")).toBe("writing-plans")
+    expect(resolveSkillForStage("implement", "feature")).toBe("implementing-plans")
+    expect(resolveSkillForStage("review_spec", "epic")).toBe("reviewing-specs")
+  })
+
+  it("returns undefined for unknown stages", () => {
+    expect(resolveSkillForStage("nonexistent_stage", "feature")).toBeUndefined()
+  })
+})
+
+describe("brainstorming skill split", () => {
+  it("brainstorming-feature exists with stage: brainstorm", async () => {
+    const catalog = await loadSkillCatalog(SKILLS_DIR)
+    const skill = catalog.find((s) => s.name === "brainstorming-feature")
+    expect(skill).toBeDefined()
+    expect(skill?.stage).toBe("brainstorm")
+  })
+
+  it("brainstorming-epic exists with stage: brainstorm", async () => {
+    const catalog = await loadSkillCatalog(SKILLS_DIR)
+    const skill = catalog.find((s) => s.name === "brainstorming-epic")
+    expect(skill).toBeDefined()
+    expect(skill?.stage).toBe("brainstorm")
+  })
+
+  it("brainstorming-roadmap exists with stage: brainstorm_roadmap", async () => {
+    const catalog = await loadSkillCatalog(SKILLS_DIR)
+    const skill = catalog.find((s) => s.name === "brainstorming-roadmap")
+    expect(skill).toBeDefined()
+    expect(skill?.stage).toBe("brainstorm_roadmap")
+  })
+
+  it("old brainstorming skill is removed", async () => {
+    const catalog = await loadSkillCatalog(SKILLS_DIR)
+    expect(catalog.find((s) => s.name === "brainstorming")).toBeUndefined()
+  })
+
+  it("each split brainstorming skill is loadable (frontmatter strips cleanly)", async () => {
+    const feature = await loadSkill("brainstorming-feature", SKILLS_DIR)
+    const epic = await loadSkill("brainstorming-epic", SKILLS_DIR)
+    const roadmap = await loadSkill("brainstorming-roadmap", SKILLS_DIR)
+    expect(feature).not.toMatch(/^---/)
+    expect(epic).not.toMatch(/^---/)
+    expect(roadmap).not.toMatch(/^---/)
+    expect(feature.length).toBeGreaterThan(500)
+    expect(epic.length).toBeGreaterThan(500)
+    expect(roadmap.length).toBeGreaterThan(500)
+  })
+
+  it("each new brainstorming skill uses the rephrased 'your output is a document' section, not the old CRITICAL wording", async () => {
+    const feature = await loadSkill("brainstorming-feature", SKILLS_DIR)
+    const epic = await loadSkill("brainstorming-epic", SKILLS_DIR)
+    const roadmap = await loadSkill("brainstorming-roadmap", SKILLS_DIR)
+    for (const content of [feature, epic, roadmap]) {
+      expect(content).toMatch(/What "your output is a document" really means/)
+      expect(content).not.toMatch(/CRITICAL: Your ONLY Output Is a Document/)
+    }
+  })
+})
+
+describe("compiling skill split", () => {
+  it("compiling-brainstorm exists", async () => {
+    const catalog = await loadSkillCatalog(SKILLS_DIR)
+    expect(catalog.find((s) => s.name === "compiling-brainstorm")).toBeDefined()
+  })
+
+  it("compiling-plan exists", async () => {
+    const catalog = await loadSkillCatalog(SKILLS_DIR)
+    expect(catalog.find((s) => s.name === "compiling-plan")).toBeDefined()
+  })
+
+  it("old compiling skill is removed", async () => {
+    const catalog = await loadSkillCatalog(SKILLS_DIR)
+    expect(catalog.find((s) => s.name === "compiling")).toBeUndefined()
+  })
+
+  it("compiling-brainstorm enforces a tight line cap in its content", async () => {
+    const content = await loadSkill("compiling-brainstorm", SKILLS_DIR)
+    expect(content).toMatch(/30\s*[-–—]\s*40\s*lines/i)
+    expect(content).toMatch(/hard cap/i)
   })
 })

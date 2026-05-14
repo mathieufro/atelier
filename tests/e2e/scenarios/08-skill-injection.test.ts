@@ -97,7 +97,7 @@ describe.each(getAvailableBackends())("Scenario 8: Skill Injection [%s]", (backe
 
     // Session start: invoke skill without a sessionId
     const startIdx = harness.events.length
-    sessionId = await invokeSkill("brainstorming", startPrompt)
+    sessionId = await invokeSkill("brainstorming-feature", startPrompt)
     expect(sessionId).toBeTruthy()
     await harness.waitForEvent("session.idle", 180_000, startIdx)
 
@@ -107,15 +107,15 @@ describe.each(getAvailableBackends())("Scenario 8: Skill Injection [%s]", (backe
     await harness.waitForEvent("session.idle", 180_000, normalIdx)
 
     const midIdx = harness.events.length
-    await invokeSkill("brainstorming", midPrompt, sessionId)
+    await invokeSkill("brainstorming-feature", midPrompt, sessionId)
     await harness.waitForEvent("session.idle", 180_000, midIdx)
 
     const messages = await getSessionMessages(sessionId)
     const userMessages = messages.filter((m) => m.message.role === "user")
 
     if (backend === "claude-code") {
-      const startSlash = `/brainstorming\n${startPrompt}`
-      const midSlash = `/brainstorming\n${midPrompt}`
+      const startSlash = `/brainstorming-feature\n${startPrompt}`
+      const midSlash = `/brainstorming-feature\n${midPrompt}`
       expect(userMessages.some((m) => userText(m) === startSlash)).toBe(true)
       expect(userMessages.some((m) => userText(m) === midSlash)).toBe(true)
     } else {
@@ -123,8 +123,8 @@ describe.each(getAvailableBackends())("Scenario 8: Skill Injection [%s]", (backe
       const midEntry = userMessages.find((m) => userText(m) === midPrompt)
       expect(startEntry).toBeTruthy()
       expect(midEntry).toBeTruthy()
-      expect(String(startEntry?.message.system ?? "")).toContain("Brainstorming")
-      expect(String(midEntry?.message.system ?? "")).toContain("Brainstorming")
+      expect(String(startEntry?.message.system ?? "")).toContain("Feature Brainstorming")
+      expect(String(midEntry?.message.system ?? "")).toContain("Feature Brainstorming")
     }
   }, 300_000)
 })

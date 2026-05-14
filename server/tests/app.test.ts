@@ -827,7 +827,13 @@ describe("Skill Endpoints", () => {
     const skills = await res.json() as any[]
     expect(skills.length).toBeGreaterThanOrEqual(15)
     const names = skills.map((s: any) => s.name)
-    expect(names).toContain("brainstorming")
+    expect(names).toContain("brainstorming-feature")
+    expect(names).toContain("brainstorming-epic")
+    expect(names).toContain("brainstorming-roadmap")
+    expect(names).toContain("compiling-brainstorm")
+    expect(names).toContain("compiling-plan")
+    expect(names).not.toContain("brainstorming")
+    expect(names).not.toContain("compiling")
     expect(names).toContain("bugfixing")
     for (const skill of skills) {
       expect(skill).toHaveProperty("name")
@@ -886,7 +892,7 @@ describe("Skill Endpoints", () => {
     const res = await app.request("/skill", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ skillName: "brainstorming", content: "Build an API" }),
+      body: JSON.stringify({ skillName: "brainstorming-feature", content: "Build an API" }),
     })
     expect(res.status).toBe(200)
     const body = await res.json() as any
@@ -910,7 +916,7 @@ describe("Skill Endpoints", () => {
     const res = await app.request("/skill", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ skillName: "brainstorming", content: "Build an API", sessionId: "existing-session" }),
+      body: JSON.stringify({ skillName: "brainstorming-feature", content: "Build an API", sessionId: "existing-session" }),
     })
     expect(res.status).toBe(200)
     const body = await res.json() as any
@@ -950,7 +956,7 @@ describe("Skill Endpoints", () => {
     const res = await app.request("/skill", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ skillName: "brainstorming", content: "Build an API", sessionId: "existing-claude" }),
+      body: JSON.stringify({ skillName: "brainstorming-feature", content: "Build an API", sessionId: "existing-claude" }),
     })
 
     expect(res.status).toBe(200)
@@ -961,7 +967,7 @@ describe("Skill Endpoints", () => {
     expect(ccProxy.sendMessage).toHaveBeenCalledWith(
       "existing-claude",
       expect.objectContaining({
-        content: "/brainstorming\nBuild an API",
+        content: "/brainstorming-feature\nBuild an API",
         system: undefined,
       }),
     )
@@ -983,7 +989,7 @@ describe("Skill Endpoints", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        skillName: "brainstorming",
+        skillName: "brainstorming-feature",
         content: "Build an API",
         model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
       }),
@@ -996,7 +1002,7 @@ describe("Skill Endpoints", () => {
     expect(ccProxy.sendMessage).toHaveBeenCalledWith(
       "s-new",
       expect.objectContaining({
-        content: "/brainstorming\nBuild an API",
+        content: "/brainstorming-feature\nBuild an API",
         system: undefined,
       }),
     )
@@ -1007,7 +1013,7 @@ describe("Skill Endpoints", () => {
     const res = await app.request("/skill", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ skillName: "brainstorming", content: "hello" }),
+      body: JSON.stringify({ skillName: "brainstorming-feature", content: "hello" }),
     })
     expect(res.status).toBe(503)
   })

@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
-import type { SkillInfo } from "@atelier/core"
+import type { PipelineType, SkillInfo } from "@atelier/core"
 
 /**
  * Reads YAML frontmatter from all SKILL.md files under the skills directory.
@@ -35,15 +35,22 @@ export async function loadSkillCatalog(skillsDir: string): Promise<SkillInfo[]> 
 }
 
 // Maps pipeline stages to their skill directories under skills/.
-// Compile stages (compile_brainstorm, compile_plan) use the "compiling" skill
-// to read context and produce a compiled prompt — they don't run OpenCode sessions.
+//
+// Brainstorm-family stages (brainstorm, brainstorm_roadmap) are resolved
+// polymorphically by pipelineType via `resolveSkillForStage` and are NOT
+// listed here.
+//
+// Compile stages use one of the two split compile skills:
+//   - "compiling-brainstorm" — tight (≤40-line) cap; used for stages that feed a
+//     conversational brainstorm agent, so a rich brief would preempt discovery.
+//   - "compiling-plan" — richer context (500–1,500 tokens); used for autonomous
+//     writers that have no user to discover with.
 export const STAGE_SKILLS: Record<string, string> = {
-  compile_brainstorm: "compiling",
-  brainstorm: "brainstorming",
+  compile_brainstorm: "compiling-brainstorm",
   review_spec: "reviewing-specs",
   fix_spec: "fixing-specs",
   establish_conventions: "establishing-conventions",
-  compile_plan: "compiling",
+  compile_plan: "compiling-plan",
   write_plan: "writing-plans",
   review_plan: "reviewing-plans",
   fix_plan: "fixing",
@@ -53,18 +60,17 @@ export const STAGE_SKILLS: Record<string, string> = {
   fix_hooks: "hook-fixing",
   simplify: "simplifying-implementation",
   e2e_gate: "e2e-gating",
-  compile_e2e_plan: "compiling",
+  compile_e2e_plan: "compiling-plan",
   write_e2e_plan: "writing-e2e-plans",
   review_e2e_plan: "reviewing-e2e-plans",
   fix_e2e_plan: "fixing",
   e2e: "e2e-validation",
   classify: "classifying",
   validate: "validating",
-  compile_roadmap_brainstorm: "compiling",
-  brainstorm_roadmap: "brainstorming",
+  compile_roadmap_brainstorm: "compiling-brainstorm",
   review_roadmap: "reviewing-roadmaps",
   fix_roadmap: "fixing",
-  compile_task_brainstorm: "compiling",
+  compile_task_brainstorm: "compiling-brainstorm",
   task_brainstorm: "task-brainstorming",
   review_task: "reviewing-task-plans",
   fix_task: "fixing",
@@ -73,6 +79,19 @@ export const STAGE_SKILLS: Record<string, string> = {
   fix_quick_plan: "fixing",
   plan_gate: "plan-gate",
   bugfix: "bugfixing",
+}
+
+// Resolve a stage's skill name, polymorphic on pipelineType for the brainstorm
+// family. Non-brainstorm stages fall through to the static STAGE_SKILLS map.
+export function resolveSkillForStage(
+  stage: string,
+  pipelineType: PipelineType,
+): string | undefined {
+  if (stage === "brainstorm") {
+    return pipelineType === "epic" ? "brainstorming-epic" : "brainstorming-feature"
+  }
+  if (stage === "brainstorm_roadmap") return "brainstorming-roadmap"
+  return STAGE_SKILLS[stage]
 }
 
 export const SIGNAL_FOOTER = `

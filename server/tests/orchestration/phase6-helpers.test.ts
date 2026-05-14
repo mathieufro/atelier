@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { STAGE_SKILLS } from "../../src/orchestration/skill-loader.js"
+import { resolveSkillForStage, STAGE_SKILLS } from "../../src/orchestration/skill-loader.js"
 import { STAGE_TITLES, COMPILED_STAGES, resolveStartStage } from "../../src/orchestration/helpers.js"
 import { loadSkill } from "../../src/orchestration/skill-loader.js"
 import { getTopology, FEATURE_TOPOLOGY, EPIC_TOPOLOGY } from "../../src/orchestration/topology.js"
@@ -10,8 +10,8 @@ const SKILLS_DIR = path.resolve(import.meta.dirname, "../../../skills")
 describe("STAGE_SKILLS: Phase 6 entries", () => {
   it("maps classify to classifying", () => { expect(STAGE_SKILLS.classify).toBe("classifying") })
   it("maps validate to validating", () => { expect(STAGE_SKILLS.validate).toBe("validating") })
-  it("maps compile_roadmap_brainstorm to compiling", () => { expect(STAGE_SKILLS.compile_roadmap_brainstorm).toBe("compiling") })
-  it("maps brainstorm_roadmap to brainstorming", () => { expect(STAGE_SKILLS.brainstorm_roadmap).toBe("brainstorming") })
+  it("maps compile_roadmap_brainstorm to compiling-brainstorm", () => { expect(STAGE_SKILLS.compile_roadmap_brainstorm).toBe("compiling-brainstorm") })
+  it("resolves brainstorm_roadmap to brainstorming-roadmap", () => { expect(resolveSkillForStage("brainstorm_roadmap", "epic")).toBe("brainstorming-roadmap") })
   it("maps review_roadmap to reviewing-roadmaps", () => { expect(STAGE_SKILLS.review_roadmap).toBe("reviewing-roadmaps") })
   it("maps fix_roadmap to fixing", () => { expect(STAGE_SKILLS.fix_roadmap).toBe("fixing") })
 })

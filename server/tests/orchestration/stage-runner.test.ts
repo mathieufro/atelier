@@ -486,3 +486,14 @@ describe("StageRunner — validate stage runs (not skipped)", () => {
   })
 
 })
+
+describe("StageRunner — brainstorm interaction-gate regression guard", () => {
+  it("stage-runner source does not contain the inline interaction-gate banner", async () => {
+    const src = await import("node:fs/promises").then((m) =>
+      m.readFile(path.resolve(import.meta.dirname, "../../src/orchestration/stage-runner.ts"), "utf-8"),
+    )
+    expect(src).not.toMatch(/Brainstorm Stage Interaction Gate/)
+    expect(src).not.toMatch(/brainstormInteractionGate/)
+  })
+})
+

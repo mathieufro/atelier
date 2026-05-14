@@ -2,7 +2,7 @@ import type { Logger } from "@atelier/core"
 import type { AgentEngine, AgentSession } from "@atelier/core/agent-engine"
 import type { PipelineState } from "./pipeline-state.js"
 import type { createEventMerger } from "../engine/event-merger.js"
-import { loadSkill, STAGE_SKILLS, SIGNAL_FOOTER } from "./skill-loader.js"
+import { loadSkill, resolveSkillForStage, STAGE_SKILLS, SIGNAL_FOOTER } from "./skill-loader.js"
 import { getTopology, getNextStage } from "./topology.js"
 import { generateTaskSlug, resolveUniquePipelineDir } from "../infra/task-slug.js"
 import type { PipelineStage } from "@atelier/core"
@@ -461,7 +461,10 @@ Start polling now.`
     const engine = await this.engineFor(pipelineId)
     const targetStage = StageRunner.COMPILE_TARGETS[stage]
     if (!targetStage) throw new Error(`Unknown compile stage: ${stage}`)
-    const targetSkillName = STAGE_SKILLS[targetStage]!
+    const targetSkillName = resolveSkillForStage(targetStage, active.pipelineType)
+    if (!targetSkillName) throw new Error(`No skill mapping for target stage: ${targetStage}`)
+    const compilerSkillName = STAGE_SKILLS[stage]
+    if (!compilerSkillName) throw new Error(`No compiler skill mapping for stage: ${stage}`)
     this.deps.logger.info("atelier", "compile", "compile_started", { pipelineId, data: { targetStage } })
 
     const topology = getTopology(active.pipelineType)
@@ -475,7 +478,7 @@ Start polling now.`
     let compilerSkillContent: string
     try {
       stageSkillContent = await loadSkill(targetSkillName, this.deps.skillsDir)
-      compilerSkillContent = await loadSkill("compiling", this.deps.skillsDir)
+      compilerSkillContent = await loadSkill(compilerSkillName, this.deps.skillsDir)
       this.deps.logger.debug("atelier", "compile", "compile_skills_loaded", { pipelineId, data: { compilerLength: compilerSkillContent.length, stageSkillLength: stageSkillContent.length } })
     } catch (err) {
       const stageId = this.deps.pipelineState.createStage({ pipelineId, stage })
@@ -623,8 +626,8 @@ Start polling now.`
         return
       }
     } else {
-      // All other autonomous/interactive stages: load skill from STAGE_SKILLS
-      const skillName = STAGE_SKILLS[stage]
+      // All other autonomous/interactive stages: resolve skill (brainstorm family is polymorphic on pipelineType).
+      const skillName = resolveSkillForStage(stage, active.pipelineType)
       if (skillName) {
         try {
           system = await loadSkill(skillName, this.deps.skillsDir)
