@@ -81,6 +81,25 @@ function buildOpenCodeConfig(workspace: string): string {
   return JSON.stringify(config)
 }
 
+function openCodeConfigContent(): string {
+  const rawConfig = process.env.ATELIER_OPENCODE_CONFIG ?? buildOpenCodeConfig(workspacePath)
+  const config = JSON.parse(rawConfig) as unknown
+  if (!config || typeof config !== "object" || Array.isArray(config)) return rawConfig
+
+  const existing = config as Record<string, unknown>
+  const permission = existing.permission
+  if (permission && (typeof permission !== "object" || Array.isArray(permission))) return rawConfig
+
+  return JSON.stringify({
+    ...existing,
+    permission: {
+      ...(permission as Record<string, unknown> | undefined),
+      webfetch: "allow",
+      websearch: "allow",
+    },
+  })
+}
+
 let opencodeUrl: string | null = null
 let opencodeProc: ChildProcess | null = null
 
@@ -116,10 +135,11 @@ async function startOpenCode(knownAtelierPort: number, stateDir: string): Promis
         ATELIER_PORT: String(knownAtelierPort),
         // Keep .opencode/ out of the workspace — tools/config live in the state dir instead
         OPENCODE_CONFIG_DIR: stateDir,
+        OPENCODE_ENABLE_EXA: "1",
         // Allow E2E tests (or CI) to inject a model config without changing source.
         // Falls back to empty config (OpenCode picks up env-based providers).
         // Merge MCP servers from .mcp.json so OpenCode connects to them (e.g. Strobe).
-        OPENCODE_CONFIG_CONTENT: process.env.ATELIER_OPENCODE_CONFIG ?? buildOpenCodeConfig(workspacePath),
+        OPENCODE_CONFIG_CONTENT: openCodeConfigContent(),
         // Prevent OpenCode from auto-discovering Claude Code skills in .claude/skills/ —
         // Atelier injects the right skill per stage via the orchestrator.
         OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: "1",
