@@ -535,8 +535,14 @@ export class SessionMonitor {
       }
     }
     if (event.kind === "session_error") {
-      entry.infraState = "reconnecting"
-      entry.infraUncertainSinceMs = atMs
+      // session.error is a session-level error (model rate-limit, content filter,
+      // provider 5xx) — NOT an SSE transport failure. Do not touch infraState here;
+      // mutating it stuck the entry in "reconnecting" forever (the global
+      // infra_state_changed event that would restore it never fires while the
+      // localhost SSE stream stays open), poisoning every subsequent watchdog tick.
+      // Recovery happens naturally: a following progress_event transitions back to
+      // WORKING; if recovery never comes, the existing lease/escalation path catches
+      // the genuine stall.
       this.transitionPipeline(entry, "INFRA_UNCERTAIN", "session_error")
     }
     if (event.kind === "progress_event") {

@@ -288,6 +288,50 @@ describe("SessionMonitor pipeline mode", () => {
       expect(monitor.getSessionSnapshot("sess-infra")?.state).toBe("WORKING")
     })
 
+    it("session_error does not poison infraState — recovery on progress_event keeps watchdog quiet", () => {
+      // Regression: opencode emits session.error for transient model/provider issues
+      // (rate-limit, content filter, 5xx). Previously this set entry.infraState to
+      // "reconnecting" with no path back to "connected" — every 5s sweep re-flipped
+      // the entry to INFRA_UNCERTAIN, making slow gpt responses look frozen.
+      let now = 0
+      const monitor = new SessionMonitor({
+        now: () => now,
+        onExhausted: vi.fn(),
+      })
+
+      monitor.registerPipelineSession({
+        pipelineId: "p1",
+        stageId: "st1",
+        stage: "implement",
+        stageMode: "autonomous",
+        sessionId: "sess-err",
+      })
+
+      monitor.recordNormalizedEvent({ kind: "progress_event", sessionId: "sess-err", subtype: "assistant_turn", atMs: now })
+      expect(monitor.getSessionSnapshot("sess-err")?.state).toBe("WORKING")
+
+      // Provider hiccup
+      now = 2_000
+      monitor.recordNormalizedEvent({ kind: "session_error", sessionId: "sess-err", error: "openai 503", atMs: now })
+      expect(monitor.getSessionSnapshot("sess-err")?.state).toBe("INFRA_UNCERTAIN")
+      // Infra is fine — only the model errored. infraState must stay "connected".
+      expect(monitor.getSessionSnapshot("sess-err")?.infraState).toBe("connected")
+
+      // Model resumes streaming
+      now = 4_000
+      monitor.recordNormalizedEvent({ kind: "progress_event", sessionId: "sess-err", subtype: "assistant_turn", atMs: now })
+      expect(monitor.getSessionSnapshot("sess-err")?.state).toBe("WORKING")
+
+      // Subsequent sweeps must NOT flip back to INFRA_UNCERTAIN — the bug was
+      // evaluatePipelineSession seeing infraState !== "connected" on every tick.
+      now = 9_000
+      monitor.sweep()
+      expect(monitor.getSessionSnapshot("sess-err")?.state).toBe("WORKING")
+      now = 14_000
+      monitor.sweep()
+      expect(monitor.getSessionSnapshot("sess-err")?.state).toBe("WORKING")
+    })
+
     it("keeps WORKING while pending interactions exist", () => {
       let now = 0
       const monitor = new SessionMonitor({
