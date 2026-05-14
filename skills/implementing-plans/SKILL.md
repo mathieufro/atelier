@@ -10,16 +10,17 @@ You are implementing a plan on a feature branch. Follow the plan exactly — you
 
 ## ⚠️ IMPORTANT — READ THIS FIRST
 
-**Every task you touch, you finish 100%. No skimming. No shortcuts. No "good enough."**
+**Every task you touch, you finish 100%. No skimming. No shortcuts. No "good enough." And you do not hand off before completing at least one task — plan length is never a reason to bail.**
 
 - A task is **done** when its test is written, run, **observed to fail**, then implementation is written, the test runs **green**, and the full suite passes. Anything less is **not done**.
 - **NEVER** mark a task `[x] done` if you skipped writing the test, skipped running it, skipped a TDD step, or left an LSP error / lint error / type error behind. Half-finished work in the progress file is worse than no work.
 - **NEVER** apply a shortcut "for now" and plan to come back. You will not come back. The next session will trust the progress file.
 - **NEVER** implement multiple tasks at once with a single shared test, or a single combined commit, or a "I'll write tests after" deferment. One task = one full TDD cycle = one verified completion.
-- **NEVER** write a test that doesn't actually exercise the production code path you implemented. A test that passes vacuously (e.g., asserting `true`, asserting on a mock that was never invoked, asserting on the test setup itself) is **not a test** — it's noise. Read your own assertion and ask: "if I deleted my implementation, would this fail?" If no, the test is broken.
-- **`verdict: "partial"` is for between tasks, not within a task.** If you finished 3/10 tasks fully and your context budget is tight, signal partial — that is the correct path. If you started task 4 and got tired, you finish task 4 first, then signal. Never sign off on a task you didn't fully execute.
+- **NEVER** write a test that doesn't actually exercise the production code path you implemented. Read your own assertion and ask: "if I deleted my implementation, would this fail?" If no, the test is broken.
+- **NEVER** signal `partial` or `stuck` with zero tasks completed in this session. Reading the plan and exploring code is not work — shipping a green test + implementation is. If you've done none, keep going.
+- **`verdict: "partial"` is for between tasks, not within a task.** If you started a task and got tired, finish it first, then signal.
 
-The lazy failure mode this skill exists to prevent: doing 5 tasks at 60% quality and signaling done. The correct mode: doing 3 tasks at 100% quality and signaling partial. The next session will pick up task 4.
+The two failure modes: doing 5 tasks at 60% quality and signaling done, *or* doing 0 tasks and bailing because the plan looks big. The correct mode: do as many tasks as fit at 100% quality, then signal partial.
 
 ## Before Starting
 
@@ -39,24 +40,22 @@ The lazy failure mode this skill exists to prevent: doing 5 tasks at 60% quality
 - **After each task:** update the progress file (`[x] done` with notes), then run a full compile + LSP diagnostic check. Do not proceed to the next task if the project has compile errors or critical LSP diagnostics.
 - Track progress via the progress file (persistent, cross-session) and TodoWrite (in-session, visual)
 
-## Partial Completion — Use It Freely
+## Partial Completion — Earn It, Then Use It
 
-Large plans do not have to fit in one session. The orchestrator supports a "partial" signal that hands control back, then **restarts you with a fresh session** so you can continue from where the progress file left off. There is **no penalty** for partial completion — it is the expected path on multi-task plans.
+Large plans do not have to fit in one session. The orchestrator supports a `partial` signal that hands control back and **restarts you with a fresh session** at the next pending task. There's no penalty for partial completion — but you have to actually complete something first.
 
-**Signal partial when any of these is true:**
-- Your context budget is approaching ~70% used.
-- You have completed at least one task and feel reluctance to continue (this reluctance is laziness — interpret it as a signal to hand off).
-- The next task requires extensive new exploration that would push you over budget.
-- You hit a blocker on the current task and need a fresh session to attack it differently.
+**Before signaling partial, you must have:**
+- Completed at least one full task in this session (red → green → suite passing → `[x] done` in the progress file).
+- Real budget pressure: context ~80%+ used, or the next task requires exploration you genuinely can't afford. "Feels like a lot" doesn't count.
 
 **How to signal partial:**
 
-1. Make sure the progress file accurately reflects what's done (`[x] done` with notes) and what's pending. The next session reads this file as its source of truth.
+1. Make sure the progress file accurately reflects what's done (`[x] done` with notes) and what's pending.
 2. Append a one-line entry to `## Iteration Log`: `- **Implement (partial):** N/M tasks done — <one-line summary of what's left>`.
-3. Call `atelier_signal` with `type: "stage_complete"`, `verdict: "partial"`, and `outputPath` set to the absolute path of the progress file. The orchestrator requires `outputPath` on partial signals.
-4. The orchestrator will spawn a fresh session that reads the same plan + progress file and resumes at the next pending task.
+3. Call `atelier_signal` with `type: "stage_complete"`, `verdict: "partial"`, and `outputPath` set to the absolute path of the progress file.
+4. The orchestrator will spawn a fresh session that resumes at the next pending task.
 
-**Do not** try to push through a 30-task plan in one session by skipping TDD, batching tests, or rushing. Signal partial and restart fresh.
+**Your default is to spend context, not conserve it.** Execute tasks until the budget is actually tight — not until the plan starts feeling big. Plan length is the orchestrator's problem.
 
 ## Completion
 
@@ -71,8 +70,8 @@ Then **call `atelier_signal`** with `type: "stage_complete"` and `verdict: "done
 - **Unclear plan instruction** → attempt a reasonable interpretation based on spec + codebase context, note the assumption in the progress file. Do not skip to a later task.
 - **Unexpected test failure** → debug using available tools, do not skip the test
 - **LSP errors after a task** → fix before moving on, even if tests pass (tests may not cover the broken path)
-- **Blocked after multiple attempts on a single task** → mark task as `[!] blocked` in the progress file and signal `verdict: "partial"`. The next session may have a different angle.
-- **Truly stuck** (entire plan is unworkable, not a single-task block) → signal `verdict: "stuck"` with a paragraph in `## Iteration Log` explaining why. This pauses the pipeline for user intervention. Reserve for actual dead-ends — partial is the right tool for "ran out of budget."
+- **Blocked after multiple attempts on a single task** → if you've already completed an earlier task this session, mark it `[!] blocked` and signal `partial`. If you haven't completed anything yet, keep attacking — read more code, instrument with Strobe, try a different angle.
+- **Truly stuck** (plan is internally inconsistent or contradicts the codebase) → signal `verdict: "stuck"` with a paragraph in `## Iteration Log` explaining the specific contradiction. Plan size or complexity is never a stuck condition.
 
 ## What NOT To Do
 
@@ -82,5 +81,6 @@ Then **call `atelier_signal`** with `type: "stage_complete"` and `verdict: "done
 - Don't refactor surrounding code unless the plan says to
 - Don't skip TDD steps even if implementation seems obvious
 - Don't bypass LSP errors to "fix later"
-- **Don't skip ahead to later tasks** when an earlier one is blocked — signal partial instead
-- **Don't try to one-shot a large plan.** Partial signals exist for a reason. Use them.
+- **Don't skip ahead to later tasks** when an earlier one is blocked — debug it, or (after at least one task done) signal partial
+- **Don't signal partial or stuck before completing at least one task this session.** Reading and exploring don't count.
+- **Don't read the plan, decide it's "too big," and bail.** Execute tasks until context is actually tight.

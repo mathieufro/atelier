@@ -20,8 +20,9 @@ You are fixing issues identified by a review agent. Your input is the review out
 - **NEVER** dismiss a failing test as "flaky" or "unrelated" without instrumenting it (Strobe trace, log injection) and producing actual evidence. Same test + same code + no new instrumentation = not allowed.
 - **NEVER** mark an architectural issue as fixed by editing the symptom. Apply the proper fix, even if it requires touching files outside the immediate area, and explain why in your output.
 - **`verdict: "partial"` is for between issues, not within an issue.** If you finished 8/25 issues fully and your context budget is tight, signal partial. If you started issue 9 and got tired, you finish issue 9 first, then signal. Never sign off on an issue you didn't fully resolve.
+- **NEVER** signal `partial` or `stuck` with zero issues fixed in this session. Reading the review and exploring code is not work — landing a fix is. If you've done none, keep going. Punch-list length is never a reason to bail.
 
-The lazy failure mode this skill exists to prevent: applying 20 surface patches at 60% quality and signaling done. The correct mode: applying 8 robust fixes at 100% quality and signaling partial. The next session will pick up issue 9.
+The two failure modes: applying 20 surface patches at 60% quality and signaling done, *or* applying zero patches and bailing because the punch-list looks long. The correct mode: apply as many robust fixes as fit at 100% quality, then signal partial.
 
 ## Before Fixing Anything
 
@@ -104,13 +105,15 @@ If fixing a pre-existing issue requires touching code outside the current featur
 
 If issue N is blocked, **do not skip ahead** to issue N+1. Either resolve the blocker (read the code, instrument with Strobe) or signal `verdict: "partial"` (see below).
 
-## Partial Completion — Use It Freely
+## Partial Completion — Earn It, Then Use It
 
-Reviews with 20+ issues do not have to fit in one session. The orchestrator supports a "partial" signal that hands control back, then **restarts you with a fresh session** so you can continue from where the progress file left off. There is **no penalty** for partial completion — it is the expected path on long review punch-lists.
+Reviews with 20+ issues do not have to fit in one session. The orchestrator supports a "partial" signal that hands control back, then **restarts you with a fresh session** so you can continue from where the progress file left off. There's no penalty — but you have to actually land a fix first.
 
-**Signal partial when any of these is true:**
-- Your context budget is approaching ~70% used.
-- You have completed at least one fix and feel reluctance to continue (this reluctance is laziness — interpret it as a signal to hand off).
+**Before signaling partial, you must have:**
+- Landed at least one full fix in this session (root cause, test, full suite passing, marked done in the progress file).
+- Real budget pressure: context ~80%+ used, or the next issue needs exploration you genuinely can't afford. "Feels like a lot" doesn't count.
+
+**Other valid partial triggers (after the bar above is met):**
 - The next issue requires extensive new exploration that would push you over budget.
 - You hit a blocker on the current issue and need a fresh session to attack it differently.
 

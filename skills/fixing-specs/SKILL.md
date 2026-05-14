@@ -20,8 +20,9 @@ You are fixing issues identified by a spec reviewer. Your input is the review ou
 - **NEVER** invent design decisions the user never made. If the resolution requires choosing between architectural alternatives, escalate — do not pick one silently.
 - **NEVER** mark an issue done by adding hand-wavy text that doesn't actually resolve the contradiction. The reader of the spec must see the issue is gone, not that it's been hidden behind softer language.
 - **`verdict: "partial"` is for between issues, not within an issue.** If you finished 6/15 issues fully and your context budget is tight, signal partial. If you started issue 7 and got tired of a cross-reference cascade, you finish issue 7 first, then signal. Never sign off on an issue you didn't fully resolve.
+- **NEVER** signal `partial` or `stuck` with zero issues fixed in this session. Reading the review and the spec is not work — landing an edit is. If you've done none, keep going. Review length is never a reason to bail.
 
-The lazy failure mode this skill exists to prevent: applying 12 surface edits at 60% quality and signaling done. The correct mode: applying 6 robust edits with full cross-reference work at 100% quality and signaling partial. The next session will pick up issue 7.
+The two failure modes: applying 12 surface edits at 60% quality and signaling done, *or* applying zero edits and bailing because the review looks long. The correct mode: apply as many robust fixes (with full cross-reference work) as fit at 100% quality, then signal partial.
 
 ## Before Fixing Anything
 
@@ -109,14 +110,13 @@ Specs are interconnected documents. A change in one section can silently invalid
 
 If issue N is blocked, **do not skip ahead** to issue N+1. Either resolve the blocker or signal `verdict: "partial"` (see below).
 
-## Partial Completion — Use It Freely
+## Partial Completion — Earn It, Then Use It
 
-Spec reviews with many structural issues do not have to fit in one session. The orchestrator supports a "partial" signal that hands control back, then **restarts you with a fresh session** to continue from where the progress file left off. There is **no penalty** for partial completion.
+Spec reviews with many structural issues do not have to fit in one session. The orchestrator supports a "partial" signal that hands control back, then **restarts you with a fresh session** to continue from where the progress file left off. There's no penalty — but you have to actually land a fix first.
 
-**Signal partial when any of these is true:**
-- Your context budget is approaching ~70% used.
-- You have completed at least one fix and feel reluctance to continue (this reluctance is laziness — interpret it as a signal to hand off).
-- A cross-reference cascade is consuming significant context.
+**Before signaling partial, you must have:**
+- Landed at least one full fix in this session (spec updated, cross-references swept, marked done in the progress file).
+- Real budget pressure: context ~80%+ used, or a cross-reference cascade is genuinely too large for what's left. "Feels like a lot" doesn't count.
 
 **How to signal partial:**
 

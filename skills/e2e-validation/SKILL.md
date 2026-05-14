@@ -18,8 +18,9 @@ You are writing and running E2E tests for a completed implementation. Your input
 - **NEVER** write a test that passes without actually exercising the system. Ask yourself: "if the production code were deleted, would this test fail?" If no, it's not a test.
 - **NEVER** silently weaken a visual assertion (lower a confidence threshold, accept a "close enough" diff) to make it pass. Either the UI is correct or you fix it — never paper over the failure.
 - **`verdict: "partial"` is for between scenarios, not within a scenario.** If you finished 5/30 scenarios fully and your context budget is tight, signal partial. If you started scenario 6 and got tired of a hard fixture, you finish scenario 6 first, then signal. Never sign off on a scenario you didn't fully execute.
+- **NEVER** signal `partial` or `stuck` with zero scenarios completed in this session. Reading the plan and booting the environment is not work — a green scenario against the real environment is. If you've done none, keep going. Plan length is never a reason to bail.
 
-The lazy failure mode this skill exists to prevent: doing 10 scenarios at 60% quality and signaling done. The correct mode: doing 5 scenarios at 100% quality and signaling partial. The next session will pick up scenario 6.
+The two failure modes: doing 10 scenarios at 60% quality and signaling done, *or* doing zero scenarios and bailing because the plan looks long. The correct mode: do as many scenarios as fit at 100% quality, then signal partial.
 
 E2E means **the real application runs in the real environment** — real hosts, real servers, real clients, real I/O. The pipeline is never validated until the actual production path is fully exercised.
 
@@ -125,14 +126,17 @@ Execute tasks **in the order the E2E plan lists them**:
 
 Track scenario completion in the progress file (`[x] done` per scenario row).
 
-## Partial Completion — Use It Freely
+## Partial Completion — Earn It, Then Use It
 
-E2E plans are routinely 30+ scenarios. You do not have to fit them all in one session. Signal `verdict: "partial"` and the orchestrator will spawn a fresh session that resumes from the next pending scenario per the progress file.
+E2E plans are routinely 30+ scenarios. You do not have to fit them all in one session. The orchestrator supports a `partial` signal that hands control back, then **restarts you with a fresh session** at the next pending scenario. There's no penalty — but you have to actually complete a scenario first.
 
-**Signal partial when:**
-- Context budget approaches ~70% used.
-- You have completed at least one infrastructure task or scenario and the next requires substantial new exploration.
+**Before signaling partial, you must have:**
+- Completed at least one full scenario (or substantial infrastructure task) in this session against the real environment, marked done in the progress file.
+- Real budget pressure: context ~80%+ used, or the next scenario needs exploration/diagnostic loops you genuinely can't afford. "Feels like a lot" doesn't count.
+
+**Other valid partial triggers (after the bar above is met):**
 - A scenario's diagnostic loop (Strobe traces, screenshot review) has consumed a lot of context.
+- The next scenario requires substantial new exploration that would push you over budget.
 
 **How:**
 
