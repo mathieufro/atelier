@@ -160,6 +160,11 @@ export async function deployMcpSignalTool(targetDir: string): Promise<void> {
   const mcpDir = path.join(targetDir, "tools", "mcp")
   await fs.mkdir(mcpDir, { recursive: true })
 
+  // Clean up old location (was previously in tools/ directly). See deployResponderMcp
+  // for the rationale — sweep must precede the early-return so stale orphans don't
+  // poison OpenCode's tools/ scanner.
+  await fs.rm(path.join(targetDir, "tools", "atelier_signal_mcp.ts"), { force: true })
+
   const toolPath = path.join(mcpDir, "atelier_signal_mcp.ts")
   const newHash = createHash("sha256").update(MCP_SIGNAL_TOOL_SOURCE).digest("hex")
   const depsInstalled = existsSync(path.join(mcpDir, "node_modules", "@modelcontextprotocol", "sdk"))
@@ -169,8 +174,6 @@ export async function deployMcpSignalTool(targetDir: string): Promise<void> {
   } catch { /* file doesn't exist yet */ }
 
   await fs.writeFile(toolPath, MCP_SIGNAL_TOOL_SOURCE, "utf-8")
-  // Clean up old location (was previously in tools/ directly)
-  await fs.rm(path.join(targetDir, "tools", "atelier_signal_mcp.ts"), { force: true })
 
   const pkgPath = path.join(mcpDir, "package.json")
   let pkg: Record<string, unknown> = {}
@@ -286,6 +289,13 @@ export async function deployResponderMcp(targetDir: string): Promise<void> {
   const mcpDir = path.join(targetDir, "tools", "mcp")
   await fs.mkdir(mcpDir, { recursive: true })
 
+  // Clean up old location (was previously in tools/ directly). Must run before
+  // the early-return below — otherwise an up-to-date tools/mcp/ deployment never
+  // sweeps the orphan, and OpenCode's tools/ scanner keeps trying to import the
+  // stale file (whose @modelcontextprotocol/sdk dep lives in tools/mcp/node_modules,
+  // not tools/node_modules), which fails resolveTools and silently kills every prompt.
+  await fs.rm(path.join(targetDir, "tools", "atelier_responder_mcp.ts"), { force: true })
+
   const toolPath = path.join(mcpDir, "atelier_responder_mcp.ts")
   const newHash = createHash("sha256").update(MCP_RESPONDER_SOURCE).digest("hex")
   const depsInstalled = existsSync(path.join(mcpDir, "node_modules", "@modelcontextprotocol", "sdk"))
@@ -295,8 +305,6 @@ export async function deployResponderMcp(targetDir: string): Promise<void> {
   } catch { /* file doesn't exist yet */ }
 
   await fs.writeFile(toolPath, MCP_RESPONDER_SOURCE, "utf-8")
-  // Clean up old location
-  await fs.rm(path.join(targetDir, "tools", "atelier_responder_mcp.ts"), { force: true })
 
   // Ensure MCP SDK deps are present (shared package.json with signal tool)
   const pkgPath = path.join(mcpDir, "package.json")
