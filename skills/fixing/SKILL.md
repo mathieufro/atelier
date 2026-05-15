@@ -129,9 +129,20 @@ Reviews with 20+ issues do not have to fit in one session. The orchestrator supp
 
 **Run the full test suite via `debug_test`.** All tests must pass — including pre-existing tests unrelated to your fixes. If something is failing, fix it. Do not signal completion with failing tests.
 
+## Progress File Discipline
+
+The `## Iteration Log` is a log of what got fixed, not a notepad for design rationale, test narratives, or hand-off essays. Each session adds at most:
+- One opening line: `- **Code Fix (session <k>, <date>):** starting at issue <id>.`
+- One line per issue fixed: `[x] <issue-id>: <≤15-word note, file path>`.
+- One closing line: partial/done/stuck.
+
+**Hard caps per line:** one sentence, ≤20 words. No bullet sub-lists, no test-suite play-by-play, no design-rationale paragraphs, no "why I picked X over the reviewer's suggestion" (that goes in spec amendments if anywhere). No "pre-existing failure" essays — fix it (per this skill's bar) and tick the line.
+
+If your contribution to `## Iteration Log` is longer than ~20 lines, you spent too much time writing and not enough fixing.
+
 ## Output
 
-After all issues are addressed and tests pass, provide a summary:
+After all issues are addressed and tests pass, provide a summary in your final assistant message (not in the progress file):
 
 - Issues fixed (count by category: localized / architectural)
 - Spec amendments made (if any, with brief description)

@@ -146,6 +146,21 @@ E2E plans are routinely 30+ scenarios. You do not have to fit them all in one se
 
 There is no penalty for partial completion. The pipeline is built for this.
 
+## Progress File Discipline
+
+The E2E table rows (`[x] done`, `[~] partial`, `[!] blocked`) are the source of truth for scenario and prereq state. Per-item notes go in the **Notes column of the table row** (≤15 words, file path).
+
+The `## Iteration Log` is a session log, not a notepad for diagnostics or hand-off essays. Each session adds at most:
+- One opening line: `- **E2E (session <k>, <date>):** starting at <id>.`
+- One closing line: partial/done/stuck.
+
+**Hard caps:**
+- Opening + closing lines: ≤20 words each. No bullet sub-lists, no per-scenario recap (table rows carry that), no per-prereq recap.
+- No `vm_stat` dumps, no host-telemetry paragraphs. If the environment is wedged, the closing line is: `blocked: <one-sentence cause + what to fix>`.
+- No "Recommended user action before next dispatch" essays — the next session reads the table and the spec.
+
+If your contribution to `## Iteration Log` is longer than ~3 lines, you spent too much time writing and not enough running tests.
+
 ## Step 4: Run and Verify
 
 Run the E2E tests using the host's native test framework or `debug_test` when the framework is supported.

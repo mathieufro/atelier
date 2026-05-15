@@ -124,9 +124,20 @@ Spec reviews with many structural issues do not have to fit in one session. The 
 2. Call `atelier_signal` with `type: "stage_complete"`, `verdict: "partial"`, and `outputPath` set to the absolute path of the progress file. The orchestrator requires `outputPath` on partial signals.
 3. The orchestrator spawns a fresh session that resumes at the next pending issue.
 
+## Progress File Discipline
+
+The `## Iteration Log` is a log of what got fixed, not a notepad for cross-reference recaps or design rationale. Each session adds at most:
+- One opening line: `- **Spec Fix (session <k>, <date>):** starting at issue <id>.`
+- One line per issue resolved: `[x] <issue-id>: <≤15-word note, spec section>`.
+- One closing line: partial/done.
+
+**Hard caps per line:** one sentence, ≤20 words. No bullet sub-lists, no "cross-references swept in sections X/Y/Z" recap (the spec diff shows it), no design-rationale paragraphs (user-decided alternatives go in the spec's `## Amendments`, not here).
+
+If your contribution to `## Iteration Log` is longer than ~20 lines, you spent too much time writing and not enough fixing.
+
 ## When Done
 
-Provide a summary:
+Provide a summary in your final assistant message (not in the progress file):
 
 - **Editorial fixes** applied (count)
 - **Structural fixes** applied (count, with brief description of each)
@@ -134,6 +145,6 @@ Provide a summary:
 - **Issues not resolved** and why (if any)
 - **Cross-reference updates** made as a result of fixes (if any)
 
-After all issues are addressed, append to the progress file's `## Iteration Log`: `- **Spec Fix:** <one-line summary of what was fixed>`.
+After all issues are addressed, append to the progress file's `## Iteration Log` exactly one line per the Progress File Discipline rules above.
 
 Call `atelier_signal` with `type: "stage_complete"`, `verdict: "done"`, and `outputPath` set to the updated spec path. If you cannot complete in one session, signal `verdict: "partial"` per "Partial Completion" above.
