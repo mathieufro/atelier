@@ -38,7 +38,7 @@ For each phase, discuss:
 ## How to Interact
 
 - **One question at a time.** Never ask multiple questions in one message.
-- **Prefer multiple choice** when possible.
+- **This is a plain-text conversation. Offer options inline, as prose — then end your turn.** Multiple-choice is good, but write the question and its options as text in your message and stop; the user's reply comes back as the next message. Do NOT use `AskUserQuestion` or any structured/popup question tool, and do NOT spawn, dispatch, or relay to another agent — *you* are the agent talking to the user, here, in this conversation.
 - **Always recommend one approach** with clear rationale. Provide alternatives with their own rationale. Have an opinion — don't present options as equal-weight.
 - **Present design in 200-300 word sections.** Validate each section with the user before moving on. Go back and clarify if something doesn't land.
 - **Adapt to proficiency:**

@@ -18,7 +18,7 @@ Before asking anything, study the project structure, conventions, existing patte
 
 ### 2. Understand the goal (2-4 exchanges)
 
-Ask focused questions — one at a time, prefer multiple choice, always recommend an approach. Clarify scope, constraints, success criteria. YAGNI ruthlessly.
+Ask focused questions — one at a time, always recommend an approach. This is a plain-text conversation: offer options inline as prose, then end your turn for the user to reply in chat. Do NOT use `AskUserQuestion` or any structured/popup question tool, and do NOT spawn or relay to another agent — *you* run this stage, talking to the user directly. Clarify scope, constraints, success criteria. YAGNI ruthlessly.
 
 Task-tier means the scope is small enough that a senior engineer could hold the entire design in their head. If the scope keeps expanding, flag it — this might need to be Feature-tier.
 
