@@ -382,6 +382,11 @@ async function ensureClient(workspacePath: string, context?: vscode.ExtensionCon
         outputChannel = new OutputChannelController("") // URL set after server starts
       }
       outputChannel?.log("info", "startup", "initializing")
+      outputChannel?.log(
+        "info",
+        "startup_context",
+        `remoteName=${vscode.env.remoteName ?? "local"} uiKind=${vscode.env.uiKind} workspacePath=${workspacePath}`,
+      )
 
       const am = new AtelierServerManager()
       am.setLogger((level, action, detail) => outputChannel?.log(level as LogLevel, action, detail))

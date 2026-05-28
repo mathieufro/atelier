@@ -16,6 +16,7 @@
   "homepage": "https://github.com/mathieufro/atelier",
   "engines": { "vscode": "^1.94.0" },
   "main": "dist/extension.js",
+  "extensionKind": ["workspace"],
   "activationEvents": ["onStartupFinished", "onWebviewPanel:atelierChat"],
   "contributes": {
     "commands": [
